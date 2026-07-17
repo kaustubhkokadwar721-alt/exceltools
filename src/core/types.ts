@@ -27,9 +27,11 @@ export type ExportFormat = 'xlsx' | 'csv' | 'tsv' | 'json' | 'md' | 'html';
 
 export type WorkerRequest =
   | { id: number; kind: 'parse'; buffer: ArrayBuffer; fileName: string; fileSize: number; previewRows?: number }
-  | { id: number; kind: 'serialize'; sheet: SheetData; format: ExportFormat };
+  | { id: number; kind: 'serialize'; sheet: SheetData; format: ExportFormat }
+  | { id: number; kind: 'serializeWorkbook'; sheets: SheetData[] };
 
 export type WorkerResponse =
   | { id: number; ok: true; kind: 'parse'; workbook: Workbook }
   | { id: number; ok: true; kind: 'serialize'; blob: Blob; mime: string; ext: string }
+  | { id: number; ok: true; kind: 'serializeWorkbook'; blob: Blob; mime: string; ext: string }
   | { id: number; ok: false; error: string };

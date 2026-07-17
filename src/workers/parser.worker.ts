@@ -20,6 +20,9 @@ self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
     } else if (req.kind === 'serialize') {
       const { blob, mime, ext } = serialize(req.sheet, req.format);
       respond({ id: req.id, ok: true, kind: 'serialize', blob, mime, ext });
+    } else if (req.kind === 'serializeWorkbook') {
+      const { blob, mime, ext } = serializeWorkbook(req.sheets);
+      respond({ id: req.id, ok: true, kind: 'serializeWorkbook', blob, mime, ext });
     }
   } catch (e) {
     respond({ id: req.id, ok: false, error: e instanceof Error ? e.message : String(e) });
@@ -95,6 +98,37 @@ function serialize(sheet: SheetData, format: ExportFormat): { blob: Blob; mime: 
       };
     }
   }
+}
+
+// Build a single multi-sheet .xlsx (used by Merge "as separate sheets").
+// Sheet names are made unique and trimmed to Excel's 31-char limit.
+function serializeWorkbook(sheets: SheetData[]): { blob: Blob; mime: string; ext: string } {
+  const wb = XLSX.utils.book_new();
+  const used = new Set<string>();
+  sheets.forEach((sheet, i) => {
+    const aoa: CellValue[][] = [sheet.headers, ...sheet.rows];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(sheet.name || `Sheet${i + 1}`, used));
+  });
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+  return {
+    blob: new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ext: 'xlsx',
+  };
+}
+
+function uniqueSheetName(name: string, used: Set<string>): string {
+  // Excel forbids : \ / ? * [ ] and caps names at 31 chars.
+  let base = name.replace(/[:\\/?*[\]]/g, '_').slice(0, 31) || 'Sheet';
+  let candidate = base;
+  let n = 2;
+  while (used.has(candidate.toLowerCase())) {
+    const suffix = `_${n++}`;
+    candidate = base.slice(0, 31 - suffix.length) + suffix;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
 }
 
 function textBlob(text: string, mime: string, ext: string) {

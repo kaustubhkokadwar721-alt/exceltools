@@ -35,4 +35,14 @@ export async function serializeSheet(
   return { blob: res.blob, ext: res.ext };
 }
 
+/** Serialize multiple sheets into one multi-sheet .xlsx workbook. */
+export async function serializeWorkbook(
+  sheets: SheetData[],
+): Promise<{ blob: Blob; ext: string }> {
+  const res = await getHarness().send<Extract<import('./types').WorkerResponse, { ok: true; kind: 'serializeWorkbook' }>>(
+    { kind: 'serializeWorkbook', sheets },
+  );
+  return { blob: res.blob, ext: res.ext };
+}
+
 export type { Workbook, SheetData, ExportFormat };
