@@ -47,6 +47,7 @@ export const TOOLS: ToolDef[] = [
       'Choose an output format: CSV, TSV, JSON, Markdown, HTML or Excel.',
       'Select Convert & download — the file is saved to this device.',
     ],
+    helpNote: 'Text formats keep values only — formulas, cell formatting and extra sheets are not preserved.',
     mount: async (root) => (await import('../tools/converter')).mountConverter(root),
   },
   {
