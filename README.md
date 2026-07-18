@@ -4,8 +4,22 @@ An **offline, all-in-one suite of spreadsheet tools** that runs fully in the
 browser on work PCs. No backend, no uploads — every file is processed on the
 user's machine. Deployable as static files or an installable PWA.
 
-> **Status:** Phase 0 (foundation & validation) and Phase 1 (core shell &
-> infrastructure) are complete. See [`docs/`](docs/) for the plan.
+> **Status:** Phases 0–2 complete. Six light-tier tools are live and verified.
+> Phase 3 (intermediate tools on DuckDB-WASM) is next. See [`docs/`](docs/).
+
+## WASM capability spike
+
+The whole suite depends on WebAssembly, Web Workers, service workers and the
+File API being allowed on the target machine. Before rolling out to locked-down
+work PCs, run the self-contained probe — it reports PASS/FAIL for each and never
+uploads anything:
+
+- **[`spike/wasm-spike.html`](spike/wasm-spike.html)** — open this single file on
+  a target PC.
+- Direct link:
+  https://github.com/kaustubhkokadwar721-alt/exceltools/blob/claude/online-tools-excel-61q85h/spike/wasm-spike.html
+- What it checks and how to read the results:
+  [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Why
 
@@ -19,19 +33,32 @@ Two-tier engine strategy — match the engine to the tool:
 
 | Tier | Tools | Engine | Loaded |
 |------|-------|--------|--------|
-| **Light** | view, convert, merge, split, clean, compare | SheetJS (`xlsx`) | up front (~small) |
+| **Light** | view, convert, merge, split, clean, dedupe, compare | SheetJS (`xlsx`) | up front (~small) |
 | **Intermediate** | query (SQL), pivot, calc, charts | DuckDB-WASM (Pyodide in reserve) | lazily, on first use |
 
-All spreadsheet parsing runs in a **Web Worker**, so the UI never freezes.
-Full rationale in [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
+All spreadsheet parsing runs in a **Web Worker**, so the UI never freezes. Each
+tool is a lazily-loaded chunk, so the base app stays ~9 KB and a tool's cost is
+only paid when it's opened. Full rationale in
+[`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
 
-## What's built (Phase 0 + 1)
+## Tools (Phase 2 — all live)
+
+| Tool | What it does |
+|------|--------------|
+| **Viewer** | Open and browse any spreadsheet without Excel |
+| **Convert** | One sheet → CSV / TSV / JSON / Markdown / HTML / XLSX |
+| **Merge** | Combine files — stack rows (aligned by column name) or keep each as a sheet |
+| **Split** | Split a sheet into many files by column value or row count → one `.zip` |
+| **Compare** | Diff two sheets on a key column: added / removed / changed / unchanged |
+| **Clean** | Trim, collapse spaces, fix case, numbers-from-text, drop blank rows/cols |
+| **Dedupe** | Remove duplicate rows by chosen key columns, keeping first or last |
+
+## What's built
 
 **Phase 0 — Foundation & Validation**
 - Vite + TypeScript static-bundle scaffold, relative base, strict CSP
 - PWA shell (service worker precache → true offline)
-- `spike/wasm-spike.html` — self-contained capability probe to run on a real
-  locked-down PC before rollout ([`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md))
+- WASM/worker/SW/File-API capability spike (see above)
 - Engine + tooling decisions recorded
 
 **Phase 1 — Core Shell & Infrastructure**
@@ -41,11 +68,16 @@ Full rationale in [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
 - Typed Web Worker harness (off-main-thread parse/serialize)
 - Virtualized data grid (renders only visible rows)
 - Central validation + toast error/warning UI
-- **Reference tool — Viewer** — exercises the whole stack end to end
 
-Verified end-to-end in headless Chromium: parse a 2-sheet / 200-row workbook
-off-thread, virtualized preview, sheet switching, and a full **offline reload**
-after cutting the network.
+**Phase 2 — Light Tools**
+- The seven tools above, each a lazy chunk over the shared off-thread parser
+- Pure, testable transforms in `src/core/transform.ts`
+  (mergeStack, splitByColumn, splitByRows, diffSheets, dedupeByKeys, cleanSheet)
+- Multi-file zip output via `fflate` (loads only with Split)
+
+Every tool has been driven end-to-end in headless Chromium with correct results
+and zero console errors, including a full **offline reload** after cutting the
+network.
 
 ## Develop
 
@@ -59,13 +91,13 @@ npm run typecheck
 
 ## Validate offline deployment (before rollout)
 
-Copy `spike/wasm-spike.html` to a target work PC and open it — it reports
-PASS/FAIL for WASM, Web Workers, service workers, File API, and downloads.
-See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+Copy [`spike/wasm-spike.html`](spike/wasm-spike.html) to a target work PC and
+open it — it reports PASS/FAIL for WASM, Web Workers, service workers, File API,
+and downloads. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Roadmap
 
-- **Phase 2** — Light tools (Convert, Merge, Split, Clean/Dedupe, Compare)
+- **Phase 2** — ✅ Light tools (Convert, Merge, Split, Clean, Dedupe, Compare)
 - **Phase 3** — Intermediate tools on DuckDB-WASM (Query, Pivot, Charts)
 - **Phase 4** — Polish, lazy-loading, offline packaging
 - **Phase 5** — Fidelity/perf/security hardening, pilot, rollout
