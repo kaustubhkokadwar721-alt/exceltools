@@ -5,8 +5,12 @@ export const SUPPORTED_EXTENSIONS = ['xlsx', 'xls', 'xlsm', 'xltx', 'csv', 'tsv'
 
 // Soft ceiling: above this the light (SheetJS) path gets slow/memory-heavy.
 // Tier-2 (DuckDB) will raise this later. We warn rather than hard-block.
-export const SOFT_SIZE_WARN_BYTES = 25 * 1024 * 1024; // 25 MB
-export const HARD_SIZE_LIMIT_BYTES = 250 * 1024 * 1024; // 250 MB
+// Limits set from measured behaviour (see docs/PERFORMANCE.md): SheetJS parse is
+// the bottleneck — ~9s at 31 MB / 200k rows, and a browser tab can OOM well below
+// the old 250 MB cap (a ~78 MB / 500k-row file crashed it). Warn early, block
+// before the danger zone.
+export const SOFT_SIZE_WARN_BYTES = 25 * 1024 * 1024; // 25 MB — parse gets slow
+export const HARD_SIZE_LIMIT_BYTES = 100 * 1024 * 1024; // 100 MB — OOM risk beyond
 
 export interface ValidationResult {
   ok: boolean;

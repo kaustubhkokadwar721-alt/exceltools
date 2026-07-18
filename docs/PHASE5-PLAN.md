@@ -12,8 +12,9 @@ PC. Phase 5 closes that gap and takes the product to a defensible **v1.0**.
 Workstreams are independent enough to run in roughly the order below; each lists
 concrete deliverables and the files involved.
 
-**Progress:** 5.1 (unit + E2E tests), 5.3 (security attestation), and 5.5 (CI
-gate) are **done**. Remaining: 5.2 performance/memory, 5.4 fidelity, 5.6 pilot.
+**Progress:** 5.1 (tests), 5.2 (performance — `docs/PERFORMANCE.md`, limits
+tuned), 5.3 (security), 5.4 (fidelity — `docs/FIDELITY.md` + in-app note), and
+5.5 (CI gate) are **done**. Remaining: 5.6 pilot & rollout (needs a real PC).
 
 ## Current gaps (baseline)
 
