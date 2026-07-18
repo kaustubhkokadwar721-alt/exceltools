@@ -9,8 +9,11 @@ measured performance/memory limits, a written security/privacy attestation,
 documented format-fidelity caveats, and a validated pilot on a real locked-down
 PC. Phase 5 closes that gap and takes the product to a defensible **v1.0**.
 
-This is a plan, not yet implemented. Workstreams are independent enough to run in
-roughly the order below; each lists concrete deliverables and the files involved.
+Workstreams are independent enough to run in roughly the order below; each lists
+concrete deliverables and the files involved.
+
+**Progress:** 5.1 (unit + E2E tests), 5.3 (security attestation), and 5.5 (CI
+gate) are **done**. Remaining: 5.2 performance/memory, 5.4 fidelity, 5.6 pilot.
 
 ## Current gaps (baseline)
 
