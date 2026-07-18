@@ -6,3 +6,6 @@ dist-ssr/
 .vite/
 exceltools-offline.zip
 exceltools-offline/
+test-results/
+playwright-report/
+.playwright/
