@@ -17,7 +17,7 @@ uploads anything:
 - **[`spike/wasm-spike.html`](spike/wasm-spike.html)** — open this single file on
   a target PC.
 - Direct link:
-  https://github.com/kaustubhkokadwar721-alt/exceltools/blob/claude/online-tools-excel-61q85h/spike/wasm-spike.html
+  https://github.com/kaustubhkokadwar721-alt/exceltools/blob/main/spike/wasm-spike.html
 - What it checks and how to read the results:
   [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
