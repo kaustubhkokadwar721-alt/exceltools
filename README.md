@@ -9,16 +9,17 @@ user's machine. Deployable as static files or an installable PWA.
 
 ## Live app & WASM capability spike
 
-Once the GitHub Pages deploy has run (see below), these are **runnable** URLs
-(not raw source):
+> A GitHub `blob/…` link only *shows* a file's source — it doesn't run it. Use a
+> link that **serves** the page.
+
+**Run the spike right now (no setup):** served live via githack —
+https://raw.githack.com/kaustubhkokadwar721-alt/exceltools/main/spike/wasm-spike.html
+
+**Permanent links (after enabling GitHub Pages, one-time — see below):**
 
 - **App:** https://kaustubhkokadwar721-alt.github.io/exceltools/
 - **WASM capability spike:**
   https://kaustubhkokadwar721-alt.github.io/exceltools/spike/wasm-spike.html
-
-> A GitHub `blob/…` link only *shows* the file's source — it doesn't run it.
-> Use the `github.io` links above (served as live pages) to actually execute the
-> spike and the app.
 
 The whole suite depends on WebAssembly, Web Workers, service workers and the
 File API being allowed on the target machine. The spike is a self-contained
@@ -29,10 +30,14 @@ target PC before rolling out. What it checks and how to read the results:
 ### Publishing (GitHub Pages)
 
 `.github/workflows/deploy.yml` builds the static bundle and publishes it to
-Pages on every push to `main`. **One-time setup:** in the repo, go to
-**Settings → Pages → Build and deployment → Source** and select
-**GitHub Actions**. The next push to `main` (or a manual "Run workflow" on the
-*Deploy to GitHub Pages* action) will publish the URLs above.
+Pages on every push to `main`.
+
+**One-time setup (required — the workflow can't do this itself):** in the repo,
+open **Settings → Pages → Build and deployment → Source** and select
+**GitHub Actions**. Then re-run the latest *Deploy to GitHub Pages* action (or
+push any commit to `main`). Until Pages is enabled this way, the deploy job
+fails at `configure-pages` with `Get Pages site failed … Not Found` — that error
+means only "Pages isn't enabled yet", not a build problem.
 
 The build uses a relative base, so it also works from any static host, network
 share, or offline PWA install — Pages is just the easiest way to get a running
