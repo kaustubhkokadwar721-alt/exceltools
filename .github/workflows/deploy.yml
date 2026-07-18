@@ -30,7 +30,11 @@ jobs:
       - run: npm run build
       # The standalone spike lives outside the Vite build; ship it alongside.
       - run: cp -r spike dist/spike
+      # enablement: true turns on Pages (build type = GitHub Actions) on first
+      # run, so no manual Settings → Pages toggle is needed.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
