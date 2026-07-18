@@ -37,6 +37,27 @@ export function selectField(
   return { wrap, select };
 }
 
+/**
+ * A scrollable checkbox list for picking multiple columns. Returns the wrapper
+ * plus a getter for the currently-checked indices.
+ */
+export function checkboxList(
+  label: string,
+  items: string[],
+  checked: (i: number) => boolean = () => false,
+): { wrap: HTMLElement; getChecked: () => number[] } {
+  const boxes: HTMLInputElement[] = [];
+  const list = el('div', { class: 'checkbox-list' });
+  items.forEach((label, i) => {
+    const input = el('input', { type: 'checkbox' });
+    input.checked = checked(i);
+    boxes.push(input);
+    list.append(el('label', { class: 'checkbox' }, [input, el('span', {}, [label])]));
+  });
+  const wrap = el('div', { class: 'field' }, [el('span', { class: 'field-label' }, [label]), list]);
+  return { wrap, getChecked: () => boxes.map((b, i) => (b.checked ? i : -1)).filter((i) => i >= 0) };
+}
+
 export function radioGroup(
   name: string,
   options: { value: string; label: string; hint?: string }[],

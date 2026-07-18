@@ -172,6 +172,15 @@ a { color: inherit; text-decoration: none; }
 .diff-chip.c-changed { border-color: #1f6feb; }
 .diff-chip.c-same { color: var(--muted); }
 
+/* Clean / Dedupe */
+.checkbox-list { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; background: var(--bg-2); min-width: 200px; }
+.keys-host { min-width: 220px; }
+.clean-toggles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px 22px; }
+.clean-toggle { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "box label" "box hint"; column-gap: 8px; align-items: center; cursor: pointer; }
+.clean-toggle input { grid-area: box; }
+.clean-toggle .radio-label { grid-area: label; }
+.clean-toggle .radio-hint { grid-area: hint; }
+
 @media (max-width: 720px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar { display: none; }
