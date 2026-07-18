@@ -2,6 +2,7 @@
 // reports results back through callbacks; it does not parse anything itself.
 import { pickFiles } from '../core/fileio';
 import { validateFile, SUPPORTED_EXTENSIONS } from '../core/validation';
+import { icon } from './icons';
 
 export interface DropzoneOptions {
   multiple?: boolean;
@@ -14,13 +15,14 @@ export function createDropzone(opts: DropzoneOptions): HTMLElement {
   const accept = SUPPORTED_EXTENSIONS.map((e) => `.${e}`).join(',');
   const el = document.createElement('div');
   el.className = 'dropzone';
+  el.tabIndex = 0;
+  el.setAttribute('role', 'button');
+  el.setAttribute('aria-label', `Add ${opts.multiple ? 'files' : 'a file'} — drop here or choose from this device`);
   el.innerHTML = `
-    <div class="dropzone-inner">
-      <div class="dropzone-icon">⬇</div>
-      <div class="dropzone-title">Drop ${opts.multiple ? 'files' : 'a file'} here</div>
-      <div class="dropzone-sub">or click to browse — ${SUPPORTED_EXTENSIONS.join(', ')}</div>
-      <div class="dropzone-privacy">Files are processed on your machine. Nothing is uploaded.</div>
-    </div>`;
+    <span class="dropzone-icon" aria-hidden="true">${icon('upload')}</span>
+    <span class="dropzone-title">Add ${opts.multiple ? 'files' : 'a file'}</span>
+    <span class="dropzone-sub">Drop here or choose from this device — ${SUPPORTED_EXTENSIONS.join(', ')}</span>
+    <span class="dropzone-privacy">Files stay on this device. Nothing is uploaded.</span>`;
 
   const handle = (files: File[]) => {
     if (!files.length) return;
@@ -38,6 +40,12 @@ export function createDropzone(opts: DropzoneOptions): HTMLElement {
   };
 
   el.addEventListener('click', async () => handle(await pickFiles(accept, opts.multiple)));
+  el.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handle(await pickFiles(accept, opts.multiple));
+    }
+  });
 
   el.addEventListener('dragover', (e) => {
     e.preventDefault();
