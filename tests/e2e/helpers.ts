@@ -12,6 +12,9 @@ export function xlsxBase64(aoa: Row[], sheetName = 'Sheet1'): string {
 
 /** Drop a base64 .xlsx onto a dropzone by dispatching a real drop event. */
 export async function dropXlsx(page: Page, selector: string, name: string, b64: string): Promise<void> {
+  // Wait for the target to exist — the tool module lazy-loads, and on a cold
+  // first navigation (notably in CI) the dropzone may not be in the DOM yet.
+  await page.waitForSelector(selector);
   await page.evaluate(
     ({ selector, name, b64 }) => {
       const bin = atob(b64);
