@@ -17,11 +17,26 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      // Precache everything so the app is fully usable with zero network.
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2,wasm}'],
-        // Large because bundled WASM engines can be sizeable; offline is the goal.
-        maximumFileSizeToCacheInBytes: 60 * 1024 * 1024,
+        // Precache the light app shell + tools only (~small). The heavy DuckDB
+        // engine (~40 MB of wasm) is deliberately excluded so light-tool users
+        // never pay for it; it is runtime-cached on first Tier-2 use instead.
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globIgnores: ['**/duckdb-*'],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        // Cache the DuckDB chunk, workers and wasm the first time a Query/Pivot
+        // tool loads them; they then stay available offline (CacheFirst).
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.includes('duckdb') || url.pathname.endsWith('.wasm'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'duckdb-engine',
+              expiration: { maxEntries: 12 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
       },
       manifest: {
         name: 'ExcelTools — Offline Suite',

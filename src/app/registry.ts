@@ -80,8 +80,24 @@ export const TOOLS: ToolDef[] = [
     status: 'ready',
     mount: async (root) => (await import('../tools/dedupe')).mountDedupe(root),
   },
-  { id: 'query', title: 'Query (SQL)', blurb: 'Run SQL over your data. Joins, filters, aggregation.', icon: '🔎', tier: 'intermediate', status: 'planned' },
-  { id: 'pivot', title: 'Pivot', blurb: 'Group-by and cross-tab summaries.', icon: '📊', tier: 'intermediate', status: 'planned' },
+  {
+    id: 'query',
+    title: 'Query (SQL)',
+    blurb: 'Run SQL over your data. Joins, filters, aggregation.',
+    icon: '🔎',
+    tier: 'intermediate',
+    status: 'ready',
+    mount: async (root) => (await import('../tools/query')).mountQuery(root),
+  },
+  {
+    id: 'pivot',
+    title: 'Pivot',
+    blurb: 'Group-by summaries, like a pivot table.',
+    icon: '📊',
+    tier: 'intermediate',
+    status: 'ready',
+    mount: async (root) => (await import('../tools/pivot')).mountPivot(root),
+  },
 ];
 
 export function findTool(id: string): ToolDef | undefined {
