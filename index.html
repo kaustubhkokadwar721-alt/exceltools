@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Strict CSP: no external hosts. Everything (scripts, styles, workers,
+      wasm) must be same-origin or inline. This is both a security control
+      and a guarantee that no spreadsheet data can be exfiltrated.
+      'wasm-unsafe-eval' is required to compile WebAssembly modules.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'"
+    />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <title>ExcelTools — Offline Suite</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <noscript>ExcelTools requires JavaScript. Everything runs locally in your browser — nothing is uploaded.</noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
