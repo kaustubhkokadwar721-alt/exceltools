@@ -7,19 +7,36 @@ user's machine. Deployable as static files or an installable PWA.
 > **Status:** Phases 0–2 complete. Six light-tier tools are live and verified.
 > Phase 3 (intermediate tools on DuckDB-WASM) is next. See [`docs/`](docs/).
 
-## WASM capability spike
+## Live app & WASM capability spike
+
+Once the GitHub Pages deploy has run (see below), these are **runnable** URLs
+(not raw source):
+
+- **App:** https://kaustubhkokadwar721-alt.github.io/exceltools/
+- **WASM capability spike:**
+  https://kaustubhkokadwar721-alt.github.io/exceltools/spike/wasm-spike.html
+
+> A GitHub `blob/…` link only *shows* the file's source — it doesn't run it.
+> Use the `github.io` links above (served as live pages) to actually execute the
+> spike and the app.
 
 The whole suite depends on WebAssembly, Web Workers, service workers and the
-File API being allowed on the target machine. Before rolling out to locked-down
-work PCs, run the self-contained probe — it reports PASS/FAIL for each and never
-uploads anything:
+File API being allowed on the target machine. The spike is a self-contained
+probe that reports PASS/FAIL for each and never uploads anything — run it on a
+target PC before rolling out. What it checks and how to read the results:
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-- **[`spike/wasm-spike.html`](spike/wasm-spike.html)** — open this single file on
-  a target PC.
-- Direct link:
-  https://github.com/kaustubhkokadwar721-alt/exceltools/blob/main/spike/wasm-spike.html
-- What it checks and how to read the results:
-  [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+### Publishing (GitHub Pages)
+
+`.github/workflows/deploy.yml` builds the static bundle and publishes it to
+Pages on every push to `main`. **One-time setup:** in the repo, go to
+**Settings → Pages → Build and deployment → Source** and select
+**GitHub Actions**. The next push to `main` (or a manual "Run workflow" on the
+*Deploy to GitHub Pages* action) will publish the URLs above.
+
+The build uses a relative base, so it also works from any static host, network
+share, or offline PWA install — Pages is just the easiest way to get a running
+link.
 
 ## Why
 
