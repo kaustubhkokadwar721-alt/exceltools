@@ -4,6 +4,7 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
+import { attachHelp } from '../ui/help';
 import { el, button, selectField } from '../ui/controls';
 import { parseFile, serializeSheet } from '../core/parser';
 import { downloadBlob } from '../core/fileio';
@@ -37,6 +38,7 @@ export function mountCompare(root: HTMLElement): void {
 
   mountSlot(root, 'A');
   mountSlot(root, 'B');
+  attachHelp(root, 'compare');
 }
 
 function mountSlot(root: HTMLElement, side: 'A' | 'B'): void {

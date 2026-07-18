@@ -4,6 +4,7 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
+import { attachHelp } from '../ui/help';
 import { parseFile } from '../core/parser';
 import { formatBytes } from '../core/validation';
 import type { Workbook } from '../core/types';
@@ -22,6 +23,7 @@ export function mountViewer(root: HTMLElement): void {
 
   const body = root.querySelector<HTMLElement>('#viewer-body')!;
   showDropzone(body);
+  attachHelp(root, 'viewer');
 }
 
 function showDropzone(body: HTMLElement): void {

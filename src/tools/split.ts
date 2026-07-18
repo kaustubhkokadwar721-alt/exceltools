@@ -3,6 +3,7 @@
 // Each piece is written as .xlsx or .csv.
 import { createDropzone } from '../ui/dropzone';
 import { toast } from '../ui/toast';
+import { attachHelp } from '../ui/help';
 import { el, button, selectField, radioGroup } from '../ui/controls';
 import { parseFile, serializeSheet } from '../core/parser';
 import { downloadBlob } from '../core/fileio';
@@ -26,6 +27,7 @@ export function mountSplit(root: HTMLElement): void {
     <p class="tool-blurb">Separate one sheet into many files — by a column's values, or into fixed-size chunks. Downloads as a .zip.</p></div>
     <div class="tool-body"><div id="dz"></div><div id="config"></div></div>`;
 
+  attachHelp(root, 'split');
   root.querySelector('#dz')!.append(
     createDropzone({
       onError: (m) => toast(m, 'error'),

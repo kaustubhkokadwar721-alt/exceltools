@@ -89,7 +89,19 @@ a { color: inherit; text-decoration: none; }
 
 /* ---- Tool heading ---- */
 .tool-head h2, .tool-head h1 { margin: 0 0 4px; font-family: var(--rgy-font-display); font-size: 26px; font-weight: 600; line-height: 1.2; }
-.tool-blurb { max-width: 680px; margin: 0 0 18px; color: var(--rgy-ink-soft); }
+.tool-blurb { max-width: 680px; margin: 0 0 12px; color: var(--rgy-ink-soft); }
+
+/* In-app help panel ("How this works") */
+.rgy-help { margin: 0 0 18px; border: 1px solid var(--rgy-rule-soft); border-left: 3px solid var(--rgy-green); border-radius: var(--rgy-radius-sm); background: var(--rgy-inset); }
+.rgy-help > summary { padding: 9px 14px; display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--rgy-green-deep); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; list-style: none; }
+.rgy-help > summary::-webkit-details-marker { display: none; }
+.rgy-help > summary::before { content: "?"; display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid color-mix(in oklch, var(--rgy-green) 45%, white); border-radius: 50%; background: color-mix(in oklch, var(--rgy-green) 10%, white); font-size: 11px; }
+.rgy-help[open] > summary { border-bottom: 1px solid var(--rgy-rule-soft); }
+.rgy-help > summary:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: 2px; }
+.rgy-help__body { padding: 12px 16px 14px; }
+.rgy-help__steps { margin: 0; padding-left: 20px; color: var(--rgy-ink-soft); display: grid; gap: 6px; }
+.rgy-help__steps li { padding-left: 2px; }
+.rgy-help__note { margin: 12px 0 0; padding-left: 10px; border-left: 2px solid var(--rgy-rule); color: var(--rgy-ink-faint); font-size: 13px; }
 .tool-loading, .loading { color: var(--rgy-ink-soft); padding: 18px 0; }
 .notfound h2 { font-family: var(--rgy-font-display); }
 .notfound, .empty { color: var(--rgy-ink-soft); }

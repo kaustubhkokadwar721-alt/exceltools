@@ -4,6 +4,7 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
+import { attachHelp } from '../ui/help';
 import { el, button, selectField } from '../ui/controls';
 import { parseFile, serializeSheet } from '../core/parser';
 import { downloadBlob } from '../core/fileio';
@@ -34,6 +35,7 @@ export function mountQuery(root: HTMLElement): void {
       <div id="result"></div>
     </div>`;
 
+  attachHelp(root, 'query');
   root.querySelector('#dz')!.append(
     createDropzone({
       multiple: true,
