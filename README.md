@@ -4,8 +4,8 @@ An **offline, all-in-one suite of spreadsheet tools** that runs fully in the
 browser on work PCs. No backend, no uploads — every file is processed on the
 user's machine. Deployable as static files or an installable PWA.
 
-> **Status:** Phases 0–2 complete. Six light-tier tools are live and verified.
-> Phase 3 (intermediate tools on DuckDB-WASM) is next. See [`docs/`](docs/).
+> **Status:** Phases 0–3 complete. Nine tools live and verified — six light-tier
+> (SheetJS) and two intermediate-tier (DuckDB-WASM). See [`docs/`](docs/).
 
 ## Live app & WASM capability spike
 
@@ -74,6 +74,8 @@ only paid when it's opened. Full rationale in
 | **Compare** | Diff two sheets on a key column: added / removed / changed / unchanged |
 | **Clean** | Trim, collapse spaces, fix case, numbers-from-text, drop blank rows/cols |
 | **Dedupe** | Remove duplicate rows by chosen key columns, keeping first or last |
+| **Query (SQL)** | *(intermediate)* Register sheets as tables and run SQL — joins, filters, aggregation |
+| **Pivot** | *(intermediate)* Group-by + aggregate summaries (Sum/Avg/Count/Min/Max) |
 
 ## What's built
 
@@ -97,9 +99,15 @@ only paid when it's opened. Full rationale in
   (mergeStack, splitByColumn, splitByRows, diffSheets, dedupeByKeys, cleanSheet)
 - Multi-file zip output via `fflate` (loads only with Split)
 
+**Phase 3 — Intermediate Tools (DuckDB-WASM)**
+- Query (SQL) and Pivot, running fully in-browser on a lazy-loaded, self-hosted
+  DuckDB-WASM engine (`src/core/duckdb.ts`) — no CDN, CSP-clean
+- The ~40 MB engine is excluded from precache and runtime-cached on first use,
+  so light-tool users never download it (precache stays ~488 KiB)
+
 Every tool has been driven end-to-end in headless Chromium with correct results
 and zero console errors, including a full **offline reload** after cutting the
-network.
+network and an in-browser SQL `GROUP BY` returning correct per-group aggregates.
 
 ## Develop
 
@@ -120,7 +128,7 @@ and downloads. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 ## Roadmap
 
 - **Phase 2** — ✅ Light tools (Convert, Merge, Split, Clean, Dedupe, Compare)
-- **Phase 3** — Intermediate tools on DuckDB-WASM (Query, Pivot, Charts)
+- **Phase 3** — ✅ Intermediate tools on DuckDB-WASM (Query, Pivot) — Charts next
 - **Phase 4** — Polish, lazy-loading, offline packaging
 - **Phase 5** — Fidelity/perf/security hardening, pilot, rollout
 
