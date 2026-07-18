@@ -4,6 +4,7 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
+import { attachHelp } from '../ui/help';
 import { el, button, selectField, radioGroup, checkboxList } from '../ui/controls';
 import { parseFile, serializeSheet } from '../core/parser';
 import { downloadBlob, withExtension } from '../core/fileio';
@@ -29,6 +30,7 @@ export function mountDedupe(root: HTMLElement): void {
     <p class="tool-blurb">Remove duplicate rows. Pick the columns that define a duplicate (leave all unticked for exact whole-row matches).</p></div>
     <div class="tool-body"><div id="dz"></div><div id="config"></div><div id="result"></div></div>`;
 
+  attachHelp(root, 'dedupe');
   root.querySelector('#dz')!.append(
     createDropzone({
       onError: (m) => toast(m, 'error'),

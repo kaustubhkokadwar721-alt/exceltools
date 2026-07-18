@@ -4,6 +4,7 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
+import { attachHelp } from '../ui/help';
 import { selectField, button, el } from '../ui/controls';
 import { parseFile, serializeSheet } from '../core/parser';
 import { downloadBlob, withExtension } from '../core/fileio';
@@ -27,6 +28,7 @@ export function mountConverter(root: HTMLElement): void {
     <div class="tool-body" id="body"></div>`;
   const body = root.querySelector<HTMLElement>('#body')!;
   reset(body);
+  attachHelp(root, 'convert');
 }
 
 function reset(body: HTMLElement): void {

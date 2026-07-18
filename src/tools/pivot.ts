@@ -4,6 +4,7 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
+import { attachHelp } from '../ui/help';
 import { el, button, selectField, checkboxList } from '../ui/controls';
 import { parseFile, serializeSheet } from '../core/parser';
 import { downloadBlob } from '../core/fileio';
@@ -31,6 +32,7 @@ export function mountPivot(root: HTMLElement): void {
     <p class="tool-blurb">Summarise data by grouping and aggregating — like a pivot table. Runs on DuckDB-WASM, fully offline.</p></div>
     <div class="tool-body"><div id="dz"></div><div id="config"></div><div id="result"></div></div>`;
 
+  attachHelp(root, 'pivot');
   root.querySelector('#dz')!.append(
     createDropzone({
       onError: (m) => toast(m, 'error'),

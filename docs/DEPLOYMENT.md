@@ -18,6 +18,22 @@ static files. Three supported delivery modes, in order of preference:
    Works, but service workers and some WASM features are restricted under
    `file://`; treat as fallback only.
 
+## Offline distributable (Phase 4)
+
+`npm run package` produces **`exceltools-offline.zip`** (~16 MB) — the built app,
+the capability spike, and a zero-dependency local-server launcher. Hand this to a
+work PC with no internal host:
+
+1. Unzip `exceltools-offline/`.
+2. Run `python serve.py` (or `node serve.mjs` if Python is unavailable).
+3. The browser opens `http://127.0.0.1:8000/` — the full suite runs locally.
+
+A local `http://` origin is used because browsers restrict Web Workers,
+WebAssembly and service workers under bare `file://`. `START-HERE.txt` in the zip
+explains all three delivery options (Python, Node, or copy to an internal host).
+Verified end-to-end: the packaged build runs the DuckDB engine offline and makes
+**zero external network requests**.
+
 ## Why an internal host beats `file://`
 
 - Service workers require a secure context (`https://` or `http://localhost` /

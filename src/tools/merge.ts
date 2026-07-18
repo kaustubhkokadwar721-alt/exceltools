@@ -5,6 +5,7 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
+import { attachHelp } from '../ui/help';
 import { el, button, selectField, radioGroup } from '../ui/controls';
 import { parseFile, serializeSheet, serializeWorkbook } from '../core/parser';
 import { downloadBlob } from '../core/fileio';
@@ -47,6 +48,7 @@ export function mountMerge(root: HTMLElement): void {
   );
   renderFiles(root);
   renderOptions(root);
+  attachHelp(root, 'merge');
 }
 
 async function addFiles(root: HTMLElement, files: File[]): Promise<void> {

@@ -116,8 +116,17 @@ npm install
 npm run dev        # dev server
 npm run build      # → dist/ (static, self-contained)
 npm run preview    # serve dist/ locally; test PWA + offline in DevTools
+npm run package    # → exceltools-offline.zip (offline distributable)
 npm run typecheck
 ```
+
+## Offline distributable
+
+`npm run package` bundles the built app, the capability spike, and a
+zero-dependency local-server launcher into `exceltools-offline.zip` (~16 MB).
+On a target PC: unzip, run `python serve.py` (or `node serve.mjs`), and the full
+suite runs at `http://127.0.0.1:8000/` — no internet, no install. See
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Validate offline deployment (before rollout)
 
@@ -129,11 +138,11 @@ and downloads. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 - **Phase 2** — ✅ Light tools (Convert, Merge, Split, Clean, Dedupe, Compare)
 - **Phase 3** — ✅ Intermediate tools on DuckDB-WASM (Query, Pivot) — Charts next
-- **Phase 4** — 🚧 Polish & packaging — **Registry UI design system applied**
-  (self-hosted Spectral + Hanken Grotesk fonts, institutional light theme,
-  evidence-first tables/KPIs, truthful "Private by design" trust label, WCAG 2.2
-  AA focus/keyboard states). Remaining: in-app help, installer packaging.
-- **Phase 5** — Fidelity/perf/security hardening, pilot, rollout
+- **Phase 4** — ✅ Polish & packaging — Registry UI design system, in-app help
+  ("How this works" per tool), and an **offline distributable** (`npm run
+  package` → `exceltools-offline.zip` with a zero-dependency local launcher).
+- **Phase 5** — Hardening, pilot, rollout — see
+  [`docs/PHASE5-PLAN.md`](docs/PHASE5-PLAN.md).
 
 ## Design
 

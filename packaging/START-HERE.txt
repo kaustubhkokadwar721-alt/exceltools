@@ -1,0 +1,47 @@
+ExcelTools — offline spreadsheet suite
+======================================
+
+Everything runs on THIS computer. No file you open is ever uploaded or sent
+anywhere. You do not need an internet connection to use it.
+
+------------------------------------------------------------------
+HOW TO START
+------------------------------------------------------------------
+
+You need one small step to open it, because web browsers require a local
+web address (http://…) rather than opening the files directly.
+
+Option A — Python (already installed on most machines)
+  1. Open this folder.
+  2. Double-click "serve.py", OR open a terminal here and run:
+         python serve.py
+     (on some systems the command is:  python3 serve.py)
+  3. Your browser opens at http://127.0.0.1:8000/ — start using ExcelTools.
+  4. Leave the small terminal window open while you work. Close it to stop.
+
+Option B — Node.js (if Python is not available)
+  1. Open a terminal in this folder and run:
+         node serve.mjs
+  2. Open the address it prints (http://127.0.0.1:8000/).
+
+Option C — an internal web server
+  Copy the contents of this folder to any internal/static web host and open
+  its address. (Serving over http/https also enables "Install" as an app and
+  full offline caching.)
+
+------------------------------------------------------------------
+WHAT'S INSIDE
+------------------------------------------------------------------
+
+  index.html            the app (open via one of the options above)
+  assets/               app code, fonts and the DuckDB engine (all local)
+  spike/wasm-spike.html a quick check that this PC can run the app
+                        (WebAssembly, Web Workers, service worker, file access)
+
+------------------------------------------------------------------
+TROUBLESHOOTING
+------------------------------------------------------------------
+
+- "Port already in use": run  PORT=9000 python serve.py  (any free number).
+- Nothing opens: manually visit the address printed in the terminal.
+- Query/Pivot need a few seconds the first time to load the local SQL engine.

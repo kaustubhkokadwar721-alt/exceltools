@@ -5,6 +5,7 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
+import { attachHelp } from '../ui/help';
 import { el, button, selectField } from '../ui/controls';
 import { parseFile, serializeSheet } from '../core/parser';
 import { downloadBlob, withExtension } from '../core/fileio';
@@ -34,6 +35,7 @@ export function mountClean(root: HTMLElement): void {
     <p class="tool-blurb">Tidy messy data so lookups, merges and comparisons work reliably. Choose what to fix, preview, then download.</p></div>
     <div class="tool-body"><div id="dz"></div><div id="config"></div><div id="result"></div></div>`;
 
+  attachHelp(root, 'clean');
   root.querySelector('#dz')!.append(
     createDropzone({
       onError: (m) => toast(m, 'error'),
