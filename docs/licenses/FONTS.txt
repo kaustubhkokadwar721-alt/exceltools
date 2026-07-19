@@ -1,0 +1,8 @@
+Fonts bundled with ExcelTools (self-hosted, offline):
+
+- Newsreader        — SIL Open Font License 1.1
+- Instrument Sans   — SIL Open Font License 1.1
+- Spline Sans Mono  — SIL Open Font License 1.1
+
+All from Google Fonts (fonts.google.com). Full OFL text: https://openfontlicense.org
+Icons are Lucide-derived — see LICENSE-Lucide.txt.

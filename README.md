@@ -138,7 +138,7 @@ and downloads. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 - **Phase 2** — ✅ Light tools (Convert, Merge, Split, Clean, Dedupe, Compare)
 - **Phase 3** — ✅ Intermediate tools on DuckDB-WASM (Query, Pivot) — Charts next
-- **Phase 4** — ✅ Polish & packaging — Registry UI design system, in-app help
+- **Phase 4** — ✅ Polish & packaging — warm register design system, in-app help
   ("How this works" per tool), and an **offline distributable** (`npm run
   package` → `exceltools-offline.zip` with a zero-dependency local launcher).
 - **Phase 5** — Hardening, pilot, rollout — see
@@ -146,12 +146,13 @@ and downloads. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Design
 
-The UI uses **Registry UI** — a calm, institutional design system for
-evidence-heavy work. Fonts are self-hosted (offline-safe, CSP-clean), colour is
-semantic (green = trust/success, maroon = primary action, amber = review,
-red = error, always paired with text), and the layout favours one dense working
-surface over decorative cards. Verified in-browser at 1920×970, 1366×768,
-1024×768 and 390×844 with no horizontal overflow.
+Warm "register" theme — a left sidebar (brand, tier-grouped nav, engine +
+privacy cards) and one working surface. Typography pairs **Newsreader** (serif
+display), **Instrument Sans** (interface) and **Spline Sans Mono** (data/IDs);
+all three are **self-hosted** (offline-safe, CSP-clean). Colour is semantic:
+green = primary action / trust, amber (gold) = the SQL-engine tier and review,
+red = error — always paired with text. Verified in-browser at desktop, laptop,
+tablet and 390px mobile with no horizontal overflow.
 
 Each planned tool already appears in the shell (marked *soon*) and plugs into
 the existing engine via `src/app/registry.ts`.

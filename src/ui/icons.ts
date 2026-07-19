@@ -22,3 +22,22 @@ export function icon(name: keyof typeof P, opts: { label?: string; cls?: string 
 }
 
 export type IconName = keyof typeof P;
+
+// Per-tool line icons (18px grid). Keyed by tool id.
+const TOOL: Record<string, string[]> = {
+  viewer: ['M1 9s3-5.5 8-5.5S17 9 17 9s-3 5.5-8 5.5S1 9 1 9Z', 'M9 11.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z'],
+  convert: ['M3 6h11M11 2.5 14.5 6 11 9.5', 'M15 12H4M7 8.5 3.5 12 7 15.5'],
+  merge: ['M3 3v4a4 4 0 0 0 4 4h8', 'M3 15v-4a4 4 0 0 1 4-4', 'M12 8l3 3-3 3'],
+  split: ['M3 9h5', 'M8 9c3 0 3-4 7-4', 'M8 9c3 0 3 4 7 4', 'M13 3l2 2-2 2', 'M13 11l2 2-2 2'],
+  compare: ['M9 2v14', 'M5 5H2v8h3', 'M13 5h3v8h-3'],
+  clean: ['M12 2 6 8', 'M6 8l-3.5 6.5a1 1 0 0 0 1.3 1.3L10.5 12', 'M6 8l4.5 4.5', 'M14 6l1.5 1.5M12.5 9.5 14 11'],
+  dedupe: ['M6 6h9v9H6z', 'M12 6V3H3v9h3', 'M8.5 10.5l1.5 1.5 3-3'],
+  query: ['M8 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z', 'M12 12l4 4', 'M6 7.5 7.5 9 6 10.5'],
+  pivot: ['M2.5 2.5h13v13h-13z', 'M2.5 6.5h13M6.5 2.5v13', 'M9 12l2-2 2 2 2-3'],
+};
+
+/** Inline SVG for a tool's icon (18px, currentColor stroke). */
+export function iconTool(id: string): string {
+  const paths = (TOOL[id] || TOOL.viewer).map((d) => `<path d="${d}"/>`).join('');
+  return `<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+}
