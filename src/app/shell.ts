@@ -110,7 +110,14 @@ function renderRoute(content: HTMLElement, route: Route): void {
   }
   content.innerHTML = `<div class="tool-loading">Loading ${tool.title}…</div>`;
   Promise.resolve(tool.mount(content)).catch((e) => {
-    toast(`${tool.title} could not load. ${e}`, 'error', 8000);
+    // A failed chunk fetch usually means a stale cached shell after a deploy.
+    // Reload once to pull the fresh index + chunks (guarded against loops).
+    if (/dynamically imported module|Failed to fetch/i.test(String(e)) && !sessionStorage.getItem('xt-reloaded')) {
+      sessionStorage.setItem('xt-reloaded', '1');
+      location.reload();
+      return;
+    }
+    toast(`${tool.title} could not load — try reloading the page. ${e}`, 'error', 8000);
     setAppStatus('Load failed', 'error');
   });
 }

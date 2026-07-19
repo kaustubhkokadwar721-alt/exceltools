@@ -24,6 +24,12 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         globIgnores: ['**/duckdb-*'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        // Self-heal across deploys: a new SW activates immediately, takes over
+        // open tabs, and purges the previous precache — so a returning client
+        // never serves a stale index that points at removed chunk hashes.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         // Cache the DuckDB chunk, workers and wasm the first time a Query/Pivot
         // tool loads them; they then stay available offline (CacheFirst).
         runtimeCaching: [
@@ -42,8 +48,8 @@ export default defineConfig({
         name: 'ExcelTools — Offline Suite',
         short_name: 'ExcelTools',
         description: 'Offline spreadsheet tools. Everything runs on your machine.',
-        theme_color: '#1f6feb',
-        background_color: '#0d1117',
+        theme_color: '#1f5c3d',
+        background_color: '#f7f4eb',
         display: 'standalone',
         start_url: './',
         scope: './',
