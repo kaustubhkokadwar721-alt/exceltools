@@ -64,6 +64,43 @@ export async function registerSheet(tableName: string, sheet: SheetData): Promis
   }
 }
 
+/**
+ * Register a resolved table with **exact** per-column types. The rows were
+ * already coerced by resolveSource, so each column's DuckDB type is read from its
+ * values (all-number → DOUBLE, all-boolean → BOOLEAN, else VARCHAR — so a
+ * text/skip import stays text). Loaded as all-text CSV then CAST, which keeps
+ * types under our strict CSP (Arrow's codegen needs eval, which CSP forbids).
+ */
+export async function insertTable(tableName: string, sheet: SheetData): Promise<void> {
+  const db = await getDB();
+  const types = sheet.headers.map((_, i) => columnDuckType(sheet.rows.map((r) => r[i] ?? null)));
+  const csv = toCSV(sheet);
+  const fileName = `${tableName}.csv`;
+  await db.registerFileText(fileName, csv);
+  const selects = sheet.headers
+    .map((h, i) => (types[i] === 'VARCHAR' ? `"${esc(h)}"` : `CAST("${esc(h)}" AS ${types[i]}) AS "${esc(h)}"`))
+    .join(', ');
+  const conn = await db.connect();
+  try {
+    await conn.query(
+      `CREATE OR REPLACE TABLE "${esc(tableName)}" AS ` +
+        `SELECT ${selects} FROM read_csv_auto('${fileName}', header=true, all_varchar=true, sample_size=-1)`,
+    );
+  } finally {
+    await conn.close();
+  }
+}
+
+function columnDuckType(values: CellValue[]): 'DOUBLE' | 'BOOLEAN' | 'VARCHAR' {
+  const nonNull = values.filter((v) => v !== null && v !== undefined);
+  if (!nonNull.length) return 'VARCHAR';
+  if (nonNull.every((v) => typeof v === 'number')) return 'DOUBLE';
+  if (nonNull.every((v) => typeof v === 'boolean')) return 'BOOLEAN';
+  return 'VARCHAR';
+}
+
+const esc = (id: string) => id.replace(/"/g, '""');
+
 export interface QueryOutcome {
   sheet: SheetData;
   elapsedMs: number;

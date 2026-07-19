@@ -2,11 +2,13 @@
 // thread, so parsing a big workbook never freezes the UI. Communicates via the
 // typed WorkerRequest/WorkerResponse contract in core/types.
 import * as XLSX from 'xlsx';
+import { extractTables } from '../core/tables';
 import type {
   WorkerRequest,
   WorkerResponse,
   SheetData,
   Workbook,
+  TableDef,
   CellValue,
   ExportFormat,
 } from '../core/types';
@@ -68,7 +70,27 @@ function parse(buffer: ArrayBuffer, fileName: string, fileSize: number, previewR
     return { name, headers, rows, totalRows };
   });
 
-  return { fileName, fileSize, sheets };
+  const tables = extractTableDefs(wb, buffer);
+  return { fileName, fileSize, sheets, tables };
+}
+
+// Extract native Excel Tables and slice each one's values from its range, so the
+// table's own header row and cells are isolated from surrounding junk.
+function extractTableDefs(wb: XLSX.WorkBook, buffer: ArrayBuffer): TableDef[] {
+  const out: TableDef[] = [];
+  for (const meta of extractTables(buffer)) {
+    const ws = wb.Sheets[meta.sheetName];
+    if (!ws) continue;
+    const grid = XLSX.utils.sheet_to_json<CellValue[]>(ws, {
+      header: 1,
+      raw: true,
+      defval: null,
+      blankrows: true,
+      range: meta.ref,
+    });
+    out.push({ name: meta.name, sheetName: meta.sheetName, ref: meta.ref, columns: meta.columns, grid });
+  }
+  return out;
 }
 
 function serialize(sheet: SheetData, format: ExportFormat): { blob: Blob; mime: string; ext: string } {

@@ -6,9 +6,11 @@ import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
 import { attachHelp } from '../ui/help';
 import { el, button, selectField } from '../ui/controls';
+import { tableSetupCard, type SourceSetup } from '../ui/source-setup';
 import { parseFile, serializeSheet } from '../core/parser';
+import { resolveSource } from '../core/source';
 import { downloadBlob } from '../core/fileio';
-import type { SheetData, ExportFormat } from '../core/types';
+import type { SheetData, ExportFormat, TableDef } from '../core/types';
 
 const PREVIEW_ROWS = 5000;
 
@@ -20,16 +22,19 @@ interface TableInfo {
 }
 
 let tables: TableInfo[] = [];
+let pendingTables: TableDef[] = [];
 let engineReady = false;
 
 export function mountQuery(root: HTMLElement): void {
   tables = [];
+  pendingTables = [];
   engineReady = false;
   root.innerHTML = `
     <div class="tool-head"><h2>Query (SQL)</h2>
     <p class="tool-blurb">Drop spreadsheets, then run SQL over them — joins, filters, aggregation. Powered by DuckDB-WASM, fully offline.</p></div>
     <div class="tool-body">
       <div id="dz"></div>
+      <div id="setup"></div>
       <div id="schema"></div>
       <div id="editor"></div>
       <div id="result"></div>
@@ -57,19 +62,63 @@ async function addFiles(root: HTMLElement, files: File[]): Promise<void> {
   for (const file of files) {
     try {
       const wb = await parseFile(file);
-      for (const sheet of wb.sheets) {
-        const label = wb.sheets.length > 1 ? `${file.name}_${sheet.name}` : file.name;
-        const name = duck.tableIdent(label, used);
-        await duck.registerSheet(name, sheet);
-        tables.push({ name, columns: sheet.headers, rows: sheet.totalRows, source: file.name });
+      if (wb.tables.length) {
+        // File defines Excel Tables → those are the source of truth. Register
+        // them through the setup step instead of the raw sheets.
+        pendingTables.push(...wb.tables);
+      } else {
+        for (const sheet of wb.sheets) {
+          const label = wb.sheets.length > 1 ? `${file.name}_${sheet.name}` : file.name;
+          const name = duck.tableIdent(label, used);
+          await duck.registerSheet(name, sheet);
+          tables.push({ name, columns: sheet.headers, rows: sheet.totalRows, source: file.name });
+        }
       }
     } catch (e) {
       toast(`Skipped "${file.name}": ${msg(e)}`, 'error', 8000);
     }
   }
   engineReady = true;
+  renderSetup(root);
   renderSchema(root);
   renderEditor(root);
+}
+
+// Native Excel Tables: let the user rename/select columns and set types, then
+// register them with those exact types (Arrow, no CSV).
+function renderSetup(root: HTMLElement): void {
+  const host = root.querySelector<HTMLElement>('#setup')!;
+  host.innerHTML = '';
+  if (!pendingTables.length) return;
+
+  const setups: SourceSetup[] = pendingTables.map((def) => tableSetupCard(def));
+  const cards = el('div', { class: 'setup-cards' }, setups.map((s) => s.el));
+  const registerBtn = button(`Register ${setups.length} Excel table(s)`, async () => {
+    const duck = await import('../core/duckdb');
+    const used = new Set(tables.map((t) => t.name));
+    for (const s of setups) {
+      const spec = s.getSpec();
+      try {
+        const sheet = resolveSource(s.def, spec);
+        const name = duck.tableIdent(spec.name, used);
+        await duck.insertTable(name, sheet);
+        tables.push({ name, columns: sheet.headers, rows: sheet.totalRows, source: `table: ${s.def.name}` });
+      } catch (e) {
+        toast(`Could not register table "${spec.name}": ${msg(e)}`, 'error', 8000);
+      }
+    }
+    pendingTables = [];
+    renderSetup(root);
+    renderSchema(root);
+    renderEditor(root);
+    toast('Excel tables registered.', 'success', 3000);
+  });
+
+  host.append(
+    el('div', { class: 'file-list-head' }, [`Excel tables found — set up and register`]),
+    cards,
+    el('div', { class: 'config-bar' }, [registerBtn]),
+  );
 }
 
 function renderSchema(root: HTMLElement): void {
