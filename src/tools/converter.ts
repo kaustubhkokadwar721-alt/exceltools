@@ -6,7 +6,9 @@ import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
 import { attachHelp } from '../ui/help';
 import { selectField, button, el } from '../ui/controls';
+import { tableSetupCard, type SourceSetup } from '../ui/source-setup';
 import { parseFile, serializeSheet } from '../core/parser';
+import { resolveSource } from '../core/source';
 import { downloadBlob, withExtension } from '../core/fileio';
 import type { Workbook, ExportFormat, SheetData } from '../core/types';
 
@@ -55,27 +57,45 @@ function reset(body: HTMLElement): void {
 function renderConfig(body: HTMLElement, fileName: string, wb: Workbook): void {
   body.innerHTML = '';
 
-  const sheetOpts = wb.sheets.map((s, i) => ({ value: String(i), label: `${s.name} (${s.totalRows} rows)` }));
-  const { wrap: sheetWrap, select: sheetSel } = selectField('Sheet', sheetOpts, '0');
+  // Sources = plain sheets + any native Excel Tables (which get a column setup).
+  const sourceOpts = [
+    ...wb.sheets.map((s, i) => ({ value: `s${i}`, label: `Sheet: ${s.name} (${s.totalRows} rows)` })),
+    ...wb.tables.map((t, i) => ({ value: `t${i}`, label: `Table: ${t.name} (${t.grid.length - 1} rows)` })),
+  ];
+  const { wrap: srcWrap, select: srcSel } = selectField('Source', sourceOpts, 's0');
   const { wrap: fmtWrap, select: fmtSel } = selectField('Output format', FORMATS.map((f) => ({ value: f.value, label: f.label })), 'csv');
 
+  const setupHost = el('div', { class: 'setup-cards' });
   const gridHost = el('div', { class: 'grid-host' });
+  let setup: SourceSetup | null = null;
+
+  // Resolve the current selection to a SheetData (live, honouring table edits).
+  const currentSheet = (): SheetData =>
+    setup ? resolveSource(setup.def, setup.getSpec()) : wb.sheets[Number(srcSel.value.slice(1))];
+
   const renderPreview = () => {
-    const sheet = previewSheet(wb.sheets[Number(sheetSel.value)]);
+    const sheet = previewSheet(currentSheet());
     gridHost.innerHTML = '';
-    if (!sheet.rows.length) {
-      gridHost.append(el('div', { class: 'empty' }, ['This sheet has no data rows.']));
-    } else {
-      gridHost.append(createDataGrid(sheet));
-    }
+    gridHost.append(sheet.rows.length ? createDataGrid(sheet) : el('div', { class: 'empty' }, ['No data rows.']));
   };
-  sheetSel.addEventListener('change', renderPreview);
+
+  const onSourceChange = () => {
+    const v = srcSel.value;
+    setupHost.innerHTML = '';
+    if (v.startsWith('t')) {
+      setup = tableSetupCard(wb.tables[Number(v.slice(1))]);
+      setupHost.append(setup.el);
+    } else {
+      setup = null;
+    }
+    renderPreview();
+  };
+  srcSel.addEventListener('change', onSourceChange);
 
   const convertBtn = button('Convert & download', async () => {
-    const sheet = wb.sheets[Number(sheetSel.value)];
-    const fmt = fmtSel.value as ExportFormat;
     try {
-      const { blob, ext } = await serializeSheet(sheet, fmt);
+      const sheet = currentSheet();
+      const { blob, ext } = await serializeSheet(sheet, fmtSel.value as ExportFormat);
       downloadBlob(blob, withExtension(fileName, ext));
       toast(`Converted "${sheet.name}" → .${ext}`, 'success', 3500);
     } catch (e) {
@@ -83,16 +103,17 @@ function renderConfig(body: HTMLElement, fileName: string, wb: Workbook): void {
     }
   });
 
-  const bar = el('div', { class: 'config-bar' }, [sheetWrap, fmtWrap, convertBtn]);
   const openAnother = button('Open another', () => reset(body), 'btn-ghost');
   const head = el('div', { class: 'workbook-bar' }, [
     el('span', { class: 'wb-name' }, [fileName]),
-    el('span', { class: 'wb-meta' }, [`${wb.sheets.length} sheet${wb.sheets.length === 1 ? '' : 's'}`]),
+    el('span', { class: 'wb-meta' }, [
+      `${wb.sheets.length} sheet${wb.sheets.length === 1 ? '' : 's'}` + (wb.tables.length ? ` · ${wb.tables.length} table${wb.tables.length === 1 ? '' : 's'}` : ''),
+    ]),
     openAnother,
   ]);
 
-  body.append(head, bar, gridHost);
-  renderPreview();
+  body.append(head, el('div', { class: 'config-bar' }, [srcWrap, fmtWrap, convertBtn]), setupHost, gridHost);
+  onSourceChange();
 }
 
 function previewSheet(sheet: SheetData): SheetData {

@@ -13,11 +13,39 @@ export interface SheetData {
 
 export type CellValue = string | number | boolean | null;
 
-/** A workbook = one or more sheets, plus provenance about the source file. */
+/** A native Excel Table (ListObject), extracted with its own name + range and
+ *  resolved to a raw grid (row 0 = the table's column headers). */
+export interface TableDef {
+  name: string; // Excel display name
+  sheetName: string;
+  ref: string; // A1 range, e.g. "C4:F120"
+  columns: string[]; // declared table column names
+  grid: CellValue[][]; // sliced values: header row + data rows
+}
+
+/** A workbook = one or more sheets, any native tables, plus source provenance. */
 export interface Workbook {
   fileName: string;
   fileSize: number;
   sheets: SheetData[];
+  tables: TableDef[];
+}
+
+// ---- Table import setup (user-controlled column/type spec) ----------------
+
+export type ColType = 'auto' | 'text' | 'number' | 'date' | 'boolean';
+
+export interface SourceColumn {
+  source: string; // original column name (identity within the table)
+  name: string; // output name (renamable)
+  include: boolean;
+  type: ColType;
+}
+
+export interface SourceSpec {
+  name: string; // output table name
+  columns: SourceColumn[];
+  skipTypeDetection: boolean; // import every column as text
 }
 
 /** Output formats the parser worker can serialize to. */
