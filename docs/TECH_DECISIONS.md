@@ -61,6 +61,34 @@ request/response harness. The main thread only ever touches UI state.
 - CSP forbids all external hosts. `script-src` includes `'wasm-unsafe-eval'`
   (required to compile WASM); `connect-src 'self'` guarantees no exfiltration.
 
+## Decision 7 — Native Excel Table extraction from the zip (post-Phase 4)
+
+SheetJS community (`xlsx@0.18.5`) does not expose Excel Tables (ListObjects) on
+parse. We extract them ourselves: `fflate.unzipSync` on the `.xlsx` buffer, then
+targeted regex over `xl/tables/tableN.xml` (name, `ref` range, columns) mapped to
+sheets via the rels chain (`src/core/tables.ts`). The parser worker slices each
+table's range so surrounding title/junk cells are ignored. Regex is acceptable
+here because the schema is small and flat, and Web Workers have no DOMParser.
+
+## Decision 8 — Typed-CSV registration instead of Arrow (CSP)
+
+The first design registered user-configured tables into DuckDB via
+`insertArrowTable` (true no-CSV path). **Rejected:** `apache-arrow`'s builders
+use `eval`/`new Function`, which our CSP (`script-src 'self' 'wasm-unsafe-eval'`,
+deliberately *not* `unsafe-eval`) blocks at runtime. Rather than weaken CSP, we
+register through `read_csv_auto(..., all_varchar=true)` and `CAST` each column to
+its resolved type in a `CREATE TABLE AS SELECT` (`insertTable` in
+`src/core/duckdb.ts`). Same exact-types result, zero new dependencies — and the
+block itself is evidence the CSP works.
+
+## Decision 9 — Self-healing service worker
+
+`registerType: 'autoUpdate'` alone let an old cached shell survive deploys and
+reference removed chunk hashes ("Failed to fetch dynamically imported module").
+Fixed with `skipWaiting` + `clientsClaim` + `cleanupOutdatedCaches`, plus a
+one-time guarded reload on `vite:preloadError` (`src/main.ts`) and on
+chunk-fetch-looking mount failures (`src/app/shell.ts`).
+
 ## Open risks carried into later phases
 
 1. **Deployment on locked-down PCs** — CSP overrides, `file://` WASM restrictions,

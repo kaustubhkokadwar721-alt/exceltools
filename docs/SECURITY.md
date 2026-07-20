@@ -33,6 +33,13 @@ Set in `index.html` and served with the app:
 `connect-src 'self'` is the load-bearing line: even if a dependency tried to phone
 home, the browser would block it.
 
+**CSP proven in practice:** during the Excel-Table feature we attempted to use
+`apache-arrow` for DuckDB registration; its code generation calls
+`eval`/`new Function`, and the browser blocked it under this policy
+(*"Refused to evaluate a string as JavaScript"*). We kept the CSP and switched to
+a typed-CSV path instead (see `docs/TECH_DECISIONS.md`, Decision 8) — the policy
+is not decorative.
+
 ## Storage & caching
 
 - **No user data is persisted.** Files live only in memory for the duration of a
