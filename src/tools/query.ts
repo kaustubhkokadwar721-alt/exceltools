@@ -43,9 +43,13 @@ export function mountQuery(root: HTMLElement): void {
     <div class="tool-body">
       <div id="dz"></div>
       <div id="setup"></div>
-      <div id="schema"></div>
-      <div id="editor"></div>
-      <div id="result"></div>
+      <div class="query-work">
+        <div class="query-main">
+          <div id="editor"></div>
+          <div id="result"></div>
+        </div>
+        <aside class="query-schema" id="schema" aria-label="Table schema reference"></aside>
+      </div>
     </div>`;
 
   attachHelp(root, 'query');
@@ -204,7 +208,8 @@ async function renderSchema(root: HTMLElement): Promise<void> {
   if (schemas.length) {
     for (const s of schemas) {
       list.append(
-        el('details', { class: 'schema-block' }, [
+        // Open by default — the schema is a live reference while writing SQL.
+        el('details', { class: 'schema-block', open: '' }, [
           el('summary', {}, [
             el('span', { class: 'schema-name' }, [s.table]),
             el('span', { class: 'schema-meta' }, [` — ${s.rows.toLocaleString()} rows · ${s.columns.length} columns`]),
