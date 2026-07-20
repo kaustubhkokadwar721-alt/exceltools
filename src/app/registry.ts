@@ -140,6 +140,21 @@ export const TOOLS: ToolDef[] = [
     mount: async (root) => (await import('../tools/query')).mountQuery(root),
   },
   {
+    id: 'python',
+    title: 'Python',
+    blurb: 'Analyse with Python/pandas — cleaning, custom rules, stats.',
+    icon: '🐍',
+    tier: 'intermediate',
+    status: 'ready',
+    help: [
+      'Add files, untick/rename what you want, then Register (first use downloads the Python engine once).',
+      'Write Python that assigns your answer to a variable called result — with pandas, each table is a DataFrame named df_<table>.',
+      'Stuck? Copy schema for AI, paste it into your AI assistant with what you want in plain English, and paste the code back.',
+    ],
+    helpNote: 'Runs entirely in this browser. Nothing is uploaded.',
+    mount: async (root) => (await import('../tools/python')).mountPython(root),
+  },
+  {
     id: 'pivot',
     title: 'Pivot',
     blurb: 'Group-by summaries, like a pivot table.',

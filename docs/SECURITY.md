@@ -22,7 +22,7 @@ Set in `index.html` and served with the app:
 | Directive | Value | Why |
 | --- | --- | --- |
 | `default-src` | `'self'` | Same-origin only baseline |
-| `script-src` | `'self' 'wasm-unsafe-eval'` | `wasm-unsafe-eval` is required to compile WebAssembly; no remote or inline scripts |
+| `script-src` | `'self' 'wasm-unsafe-eval' 'unsafe-eval'` | `wasm-unsafe-eval` compiles WebAssembly; `'unsafe-eval'` is required by the Python engine (see below) |
 | `style-src` | `'self' 'unsafe-inline'` | App styles; inline needed for dynamic UI |
 | `worker-src` | `'self' blob:` | Parser/DuckDB workers |
 | `img-src` | `'self' data: blob:` | Inline icons and generated previews |
@@ -35,10 +35,24 @@ home, the browser would block it.
 
 **CSP proven in practice:** during the Excel-Table feature we attempted to use
 `apache-arrow` for DuckDB registration; its code generation calls
-`eval`/`new Function`, and the browser blocked it under this policy
+`eval`/`new Function`, and the browser blocked it under the then-strict policy
 (*"Refused to evaluate a string as JavaScript"*). We kept the CSP and switched to
 a typed-CSV path instead (see `docs/TECH_DECISIONS.md`, Decision 8) — the policy
 is not decorative.
+
+### The `'unsafe-eval'` tradeoff (Python engine)
+
+Adding the Python tool required `'unsafe-eval'`: Pyodide's Emscripten glue
+evaluates strings at engine init (`ASM_CONSTS = eval(...)`) and cannot run
+without it — verified by a spike that failed under the strict policy and passed
+with the relaxation. Accepted deliberately, with these boundaries:
+
+- **The privacy guarantee is unchanged.** `connect-src 'self'` still blocks all
+  outbound traffic, and the CI no-exfiltration E2E keeps enforcing it.
+- `script-src 'self'` still forbids loading any third-party script.
+- What `'unsafe-eval'` concedes: if an XSS injection existed, injected code
+  could use eval. The app renders all cell content HTML-escaped, has no server,
+  and accepts no user HTML — the injection surface is minimal.
 
 ## Storage & caching
 

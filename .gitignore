@@ -9,3 +9,4 @@ exceltools-offline/
 test-results/
 playwright-report/
 .playwright/
+public/pyodide/

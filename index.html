@@ -7,11 +7,14 @@
       Strict CSP: no external hosts. Everything (scripts, styles, workers,
       wasm) must be same-origin or inline. This is both a security control
       and a guarantee that no spreadsheet data can be exfiltrated.
-      'wasm-unsafe-eval' is required to compile WebAssembly modules.
+      'wasm-unsafe-eval' compiles WebAssembly; 'unsafe-eval' is required by the
+      Python engine (Pyodide's Emscripten glue evals at init — see
+      docs/SECURITY.md for the accepted tradeoff). connect-src 'self' remains
+      the exfiltration block and is enforced by a CI test.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'"
     />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <title>ExcelTools — Offline Suite</title>
