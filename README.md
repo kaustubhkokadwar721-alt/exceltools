@@ -35,7 +35,6 @@ fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 
 | Tool | What it does |
 |------|--------------|
-| **Viewer** | Open and browse any spreadsheet without Excel |
 | **Convert** | A sheet **or a native Excel Table** → CSV / TSV / JSON / Markdown / HTML / XLSX |
 | **Merge** | Combine files — stack rows (aligned by column name) or keep each as a sheet |
 | **Split** | Split a sheet into many files by column value or row count → one `.zip` |
@@ -64,7 +63,7 @@ Two-tier engine strategy — match the engine to the tool:
 
 | Tier | Tools | Engine | Loaded |
 |------|-------|--------|--------|
-| **Light** | view, convert, merge, split, clean, dedupe, compare | SheetJS (`xlsx`) | up front (small) |
+| **Light** | convert, merge, split, clean, dedupe, compare | SheetJS (`xlsx`) | up front (small) |
 | **SQL engine** | query, pivot | DuckDB-WASM | lazily on first use, then cached offline |
 | **Python engine** | python notebook | Pyodide (Python 3.14 + pandas + matplotlib) | lazily on first use, then cached offline |
 
@@ -138,7 +137,7 @@ horizontal overflow.
 
 ## Roadmap
 
-- **Phases 0–4** — ✅ foundation, shell, seven light tools, DuckDB tier, design
+- **Phases 0–4** — ✅ foundation, shell, six light tools, DuckDB tier, design
   system, in-app help, offline packaging
 - **Phase 5** — hardening ✅ (tests, CI gate, security attestation, measured
   perf limits, fidelity docs) · **remaining:** real-PC spike + pilot + v1.0 —

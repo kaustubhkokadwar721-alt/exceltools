@@ -1,12 +1,11 @@
-// Tool registry: the single list of tools the shell knows about. Phase 1 ships
-// the plumbing plus one reference tool (Viewer) that exercises the whole stack:
-// dropzone → validation → worker parse → data grid. Phase 2/3 tools register
-// here the same way. `help` powers the in-app "How this works" panel.
+// Tool registry: the single list of tools the shell knows about. Every tool is
+// a lazily-mounted chunk over the shared stack (dropzone → validation → worker
+// parse → data grid). `help` powers the in-app "How this works" panel.
 
 export type Tier = 'light' | 'intermediate';
 
 export interface ToolDef {
-  id: string; // URL slug, e.g. "viewer"
+  id: string; // URL slug, e.g. "convert"
   title: string;
   blurb: string;
   icon: string; // emoji / glyph
@@ -21,20 +20,6 @@ export interface ToolDef {
 }
 
 export const TOOLS: ToolDef[] = [
-  {
-    id: 'viewer',
-    title: 'Viewer',
-    blurb: 'Open and browse any spreadsheet without Excel.',
-    icon: '👁',
-    tier: 'light',
-    status: 'ready',
-    help: [
-      'Add a spreadsheet — drag it in or choose from this device.',
-      'Switch between sheets using the tabs.',
-      'Scroll the grid; only visible rows are rendered, so large files stay smooth.',
-    ],
-    mount: async (root) => (await import('../tools/viewer')).mountViewer(root),
-  },
   {
     id: 'convert',
     title: 'Convert',

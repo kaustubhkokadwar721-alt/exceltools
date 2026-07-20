@@ -107,12 +107,12 @@ test('notebook: matplotlib chart renders as an image', async ({ page }) => {
 });
 
 test('grid: drag-resize and double-click autofit', async ({ page }) => {
-  // Use the Viewer (light tier — fast) to exercise the shared grid.
+  // Use Convert's preview (light tier — fast) to exercise the shared grid.
   const WIDE = xlsxBase64([
     ['A Very Long Column Header Name Indeed', 'B'],
     ['short', 'this cell has some quite long content to fit against'],
   ]);
-  await page.goto('/#/tool/viewer');
+  await page.goto('/#/tool/convert');
   await dropXlsx(page, '.dropzone', 'wide.xlsx', WIDE);
   await page.waitForSelector('.grid-resize');
 
