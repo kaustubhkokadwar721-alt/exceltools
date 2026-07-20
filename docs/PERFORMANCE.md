@@ -4,7 +4,7 @@ Measured in headless Chromium against generated 4-column workbooks. Numbers are
 indicative — a real work PC with more RAM tolerates more; a locked-down thin
 client tolerates less.
 
-| Rows | .xlsx size | Viewer parse (SheetJS) | DuckDB query (GROUP BY) |
+| Rows | .xlsx size | Light-tier parse (SheetJS) | DuckDB query (GROUP BY) |
 | ---: | ---: | ---: | ---: |
 | 50,000 | 7.5 MB | 2.3 s | 148 ms (incl. engine warmup) |
 | 200,000 | 31 MB | 8.9 s | 70 ms |
@@ -42,7 +42,7 @@ Measured anchor above: `GROUP BY` over 200k rows in ~70 ms.
 
 ## Guidance
 
-- For very large data, prefer **Query/Pivot** over Viewer/Convert — DuckDB is the
+- For very large data, prefer **Query/Pivot** over the light tools — DuckDB is the
   stronger engine, and SQL narrows the result before it hits the grid.
 - Split oversized files first (the Split tool) or filter to the columns/rows you
   need before other operations.
