@@ -34,6 +34,7 @@ const TOOL: Record<string, string[]> = {
   dedupe: ['M6 6h9v9H6z', 'M12 6V3H3v9h3', 'M8.5 10.5l1.5 1.5 3-3'],
   query: ['M8 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z', 'M12 12l4 4', 'M6 7.5 7.5 9 6 10.5'],
   pivot: ['M2.5 2.5h13v13h-13z', 'M2.5 6.5h13M6.5 2.5v13', 'M9 12l2-2 2 2 2-3'],
+  python: ['M3.5 2.5h11a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1Z', 'M6.5 2.5v13', 'M9 6h4M9 9h4M9 12h2.5'],
 };
 
 /** Inline SVG for a tool's icon (18px, currentColor stroke). */

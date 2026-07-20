@@ -9,21 +9,13 @@ import { iconTool } from '../ui/icons';
 type StatusState = 'success' | 'busy' | 'error';
 let engineCard: HTMLElement | null = null;
 
-/** Update the sidebar engine card (runtime status). */
+/** Update the sidebar status line. */
 export function setAppStatus(message: string, state: StatusState = 'success'): void {
   if (!engineCard) return;
   const dot = engineCard.querySelector<HTMLElement>('.dot')!;
   const txt = engineCard.querySelector<HTMLElement>('.txt')!;
-  const body = engineCard.querySelector<HTMLElement>('.side-card-body')!;
-  const color = state === 'error' ? 'var(--rgy-red)' : state === 'busy' ? 'var(--rgy-gold)' : 'var(--rgy-green)';
-  dot.style.background = color;
-  if (state === 'success') {
-    txt.textContent = 'Engine ready';
-    body.textContent = 'SQL engine loads on first use';
-  } else {
-    txt.textContent = message;
-    if (state === 'error') body.textContent = 'Reload and try again';
-  }
+  dot.style.background = state === 'error' ? 'var(--rgy-red)' : state === 'busy' ? 'var(--rgy-gold)' : 'var(--rgy-green)';
+  txt.textContent = state === 'success' ? 'Ready' : message;
 }
 
 export function mountShell(root: HTMLElement): void {
@@ -38,15 +30,14 @@ export function mountShell(root: HTMLElement): void {
           </span>
         </div>
         <nav id="nav" aria-label="Tools"></nav>
-        <div class="side-card" id="engine">
-          <div class="side-card-title"><span class="dot"></span><span class="txt">Engine ready</span></div>
-          <div class="side-card-body">SQL engine loads on first use</div>
+        <div class="side-status">
+          <div class="side-line" id="engine"><span class="dot"></span><span class="txt">Ready</span></div>
+          <details class="side-privacy">
+            <summary><span class="dot"></span>Private by design</summary>
+            <div class="side-privacy-body">Your files are read on this computer and nowhere else. Nothing is uploaded — switch off Wi-Fi and keep working.</div>
+          </details>
+          <div class="side-line side-foot-line"><span class="dot"></span>Offline · nothing leaves this device</div>
         </div>
-        <div class="side-card">
-          <div class="side-card-title"><span class="dot"></span>PRIVATE BY DESIGN</div>
-          <div class="side-card-body">Your files are read on this computer and nowhere else. Nothing is uploaded — switch off Wi-Fi and keep working.</div>
-        </div>
-        <div class="side-foot"><span class="dot"></span>Offline · nothing leaves this device</div>
       </aside>
       <main class="app-work" id="content" tabindex="-1"></main>
     </div>`;
@@ -60,23 +51,25 @@ export function mountShell(root: HTMLElement): void {
 }
 
 function buildNav(nav: HTMLElement): void {
+  // Explicit engine grouping: Query/Pivot run on DuckDB (SQL), the notebook on
+  // Pyodide (Python) — they are separate engines and read wrong under one label.
   const groups = [
-    { tier: 'light' as const, label: 'Light tools', cls: '' },
-    { tier: 'intermediate' as const, label: 'SQL Engine', cls: 'sql' },
+    { label: 'Light tools', cls: '', ids: TOOLS.filter((t) => t.tier === 'light').map((t) => t.id) },
+    { label: 'SQL engine', cls: 'sql', ids: ['query', 'pivot'] },
+    { label: 'Python engine', cls: 'py', ids: ['python'] },
   ];
+  const item = (t: (typeof TOOLS)[number]) => `
+    <a class="nav-item ${t.status}" href="#/tool/${t.id}" data-id="${t.id}">
+      <span class="nav-icon">${iconTool(t.id)}</span>
+      <span class="nav-title">${t.title}</span>
+      ${t.id === 'query' ? '<span class="nav-meta">⌘↩</span>' : t.status === 'planned' ? '<span class="nav-tag">soon</span>' : ''}
+    </a>`;
   nav.innerHTML = groups
     .map(
       (g) => `
       <div class="nav-group-label ${g.cls}"><span class="dot"></span>${g.label}</div>
       <div class="nav-group">
-        ${TOOLS.filter((t) => t.tier === g.tier)
-          .map(
-            (t) => `<a class="nav-item ${t.status}" href="#/tool/${t.id}" data-id="${t.id}">
-                      <span class="nav-title">${t.title}</span>
-                      ${t.id === 'query' ? '<span class="nav-meta">⌘↩</span>' : t.status === 'planned' ? '<span class="nav-tag">soon</span>' : ''}
-                    </a>`,
-          )
-          .join('')}
+        ${g.ids.map((id) => TOOLS.find((t) => t.id === id)).filter(Boolean).map((t) => item(t!)).join('')}
       </div>`,
     )
     .join('');
