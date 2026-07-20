@@ -103,6 +103,20 @@ and CI-enforced. The worker exposes each registered table as
 `tables["name"]` (list of dicts) and, when pandas is present, `df_<name>`
 DataFrames; user code assigns `result`, which is converted back to a grid.
 
+## Decision 11 — Jupyter-style notebook runner + Agg charts
+
+The Python tool became a **notebook**: cells with persistent globals (already a
+property of the Pyodide worker), Jupyter display semantics (per-cell
+stdout/stderr capture via `setStdout`, last-expression display via an `ast`
+split of the final `Expr`), outputs classified as DataFrame→grid,
+matplotlib figure→PNG (`Agg` backend + `savefig`→base64 — no interactive
+backend, which suits a static, offline app), else `repr`. Markdown cells use a
+dependency-free regex renderer (input HTML-escaped first). Notebooks save/load
+as **nbformat 4** (`src/core/notebook.ts`) so files round-trip with real
+Jupyter. matplotlib and its wheel set ride the same best-effort CI staging as
+pandas (`scripts/pyodide-assets.mjs`); each capability degrades independently
+when wheels are absent.
+
 ## Open risks carried into later phases
 
 1. **Deployment on locked-down PCs** — CSP overrides, `file://` WASM restrictions,
