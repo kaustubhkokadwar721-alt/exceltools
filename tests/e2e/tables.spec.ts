@@ -25,7 +25,7 @@ test('detects the Excel Table, lets you rename it, registers typed columns', asy
   // Rename the table, then register.
   await nameInput.fill('orders');
   await page.click('button:has-text("Register")');
-  await page.waitForSelector('.schema-table:has-text("orders")');
+  await page.waitForSelector('.schema-block summary:has-text("orders")');
 
   // Amount auto-detects as numeric → SUM works.
   await page.fill('.sql-editor', 'SELECT SUM(Amount) AS total FROM orders');
@@ -43,7 +43,7 @@ test('skip type detection imports the column as text', async ({ page }) => {
   // Tick "Skip type detection", register.
   await page.locator('.source-card-head input[type="checkbox"]').check();
   await page.click('button:has-text("Register")');
-  await page.waitForSelector('.schema-table:has-text("sales")');
+  await page.waitForSelector('.schema-block summary:has-text("sales")');
 
   await page.fill('.sql-editor', "SELECT typeof(Amount) AS t FROM sales LIMIT 1");
   await page.click('button:has-text("Run query")');

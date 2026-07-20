@@ -21,13 +21,21 @@ interface TableInfo {
   source: string;
 }
 
+interface PendingSheet {
+  sheet: SheetData;
+  source: string;
+  defaultName: string;
+}
+
 let tables: TableInfo[] = [];
 let pendingTables: TableDef[] = [];
+let pendingSheets: PendingSheet[] = [];
 let engineReady = false;
 
 export function mountQuery(root: HTMLElement): void {
   tables = [];
   pendingTables = [];
+  pendingSheets = [];
   engineReady = false;
   root.innerHTML = `
     <div class="tool-head"><h2>Query (SQL)</h2>
@@ -52,26 +60,19 @@ export function mountQuery(root: HTMLElement): void {
 }
 
 async function addFiles(root: HTMLElement, files: File[]): Promise<void> {
-  const schemaHost = root.querySelector<HTMLElement>('#schema')!;
-  schemaHost.innerHTML = `<div class="loading">Loading the SQL engine and registering tables…</div>`;
-
-  // Lazy-load DuckDB only now (first Tier-2 use).
-  const duck = await import('../core/duckdb');
-  const used = new Set(tables.map((t) => t.name));
+  const setupHost = root.querySelector<HTMLElement>('#setup')!;
+  setupHost.innerHTML = `<div class="loading">Reading files…</div>`;
 
   for (const file of files) {
     try {
       const wb = await parseFile(file);
       if (wb.tables.length) {
-        // File defines Excel Tables → those are the source of truth. Register
-        // them through the setup step instead of the raw sheets.
+        // File defines Excel Tables → those are the source of truth.
         pendingTables.push(...wb.tables);
       } else {
         for (const sheet of wb.sheets) {
           const label = wb.sheets.length > 1 ? `${file.name}_${sheet.name}` : file.name;
-          const name = duck.tableIdent(label, used);
-          await duck.registerSheet(name, sheet);
-          tables.push({ name, columns: sheet.headers, rows: sheet.totalRows, source: file.name });
+          pendingSheets.push({ sheet, source: file.name, defaultName: label });
         }
       }
     } catch (e) {
@@ -84,18 +85,44 @@ async function addFiles(root: HTMLElement, files: File[]): Promise<void> {
   renderEditor(root);
 }
 
-// Native Excel Tables: let the user rename/select columns and set types, then
-// register them with those exact types (Arrow, no CSV).
+// Staged registration: every source (plain sheet or Excel Table) is listed for
+// the user to include/exclude and rename before anything is registered.
 function renderSetup(root: HTMLElement): void {
   const host = root.querySelector<HTMLElement>('#setup')!;
   host.innerHTML = '';
-  if (!pendingTables.length) return;
+  if (!pendingTables.length && !pendingSheets.length) return;
 
+  // Plain sheets: one compact row each — include + name.
+  const sheetRows = pendingSheets.map((p) => {
+    const include = el('input', { type: 'checkbox' }) as HTMLInputElement;
+    include.checked = true;
+    const name = el('input', { class: 'field-input col-name' }) as HTMLInputElement;
+    name.value = p.defaultName.replace(/\.[^.]+$/, '');
+    const row = el('div', { class: 'col-row sheet-stage-row' }, [
+      el('label', { class: 'checkbox' }, [include, el('span', { class: 'col-src' }, [p.source + (p.sheet.name !== p.source ? ` › ${p.sheet.name}` : '')])]),
+      name,
+      el('span', { class: 'file-meta' }, [`${p.sheet.headers.length} cols · ${p.sheet.totalRows.toLocaleString()} rows`]),
+    ]);
+    return { p, include, name, row };
+  });
+
+  // Excel Tables: full setup cards (columns + types).
   const setups: SourceSetup[] = pendingTables.map((def) => tableSetupCard(def));
-  const cards = el('div', { class: 'setup-cards' }, setups.map((s) => s.el));
-  const registerBtn = button(`Register ${setups.length} Excel table(s)`, async () => {
+
+  const total = sheetRows.length + setups.length;
+  const registerBtn = button(`Register ${total} table(s)`, async () => {
     const duck = await import('../core/duckdb');
     const used = new Set(tables.map((t) => t.name));
+    for (const r of sheetRows) {
+      if (!r.include.checked) continue;
+      try {
+        const name = duck.tableIdent(r.name.value.trim() || r.p.defaultName, used);
+        await duck.registerSheet(name, r.p.sheet);
+        tables.push({ name, columns: r.p.sheet.headers, rows: r.p.sheet.totalRows, source: r.p.source });
+      } catch (e) {
+        toast(`Could not register "${r.name.value}": ${msg(e)}`, 'error', 8000);
+      }
+    }
     for (const s of setups) {
       const spec = s.getSpec();
       try {
@@ -108,34 +135,100 @@ function renderSetup(root: HTMLElement): void {
       }
     }
     pendingTables = [];
+    pendingSheets = [];
     renderSetup(root);
-    renderSchema(root);
+    await renderSchema(root);
     renderEditor(root);
-    toast('Excel tables registered.', 'success', 3000);
+    toast('Tables registered.', 'success', 3000);
   });
 
-  host.append(
-    el('div', { class: 'file-list-head' }, [`Excel tables found — set up and register`]),
-    cards,
-    el('div', { class: 'config-bar' }, [registerBtn]),
-  );
+  const children: (Node | string)[] = [
+    el('div', { class: 'file-list-head' }, ['Choose tables to register — untick to skip, rename as needed']),
+  ];
+  if (sheetRows.length) {
+    children.push(
+      el('div', { class: 'source-card' }, [
+        el('div', { class: 'col-editor' }, [
+          el('div', { class: 'col-row sheet-stage-row col-row-head' }, [
+            el('span', {}, ['Include · source']),
+            el('span', {}, ['Table name']),
+            el('span', {}, ['Size']),
+          ]),
+          ...sheetRows.map((r) => r.row),
+        ]),
+      ]),
+    );
+  }
+  if (setups.length) children.push(el('div', { class: 'setup-cards' }, setups.map((s) => s.el)));
+  children.push(el('div', { class: 'config-bar' }, [registerBtn]));
+  host.append(...children);
 }
 
-function renderSchema(root: HTMLElement): void {
+async function renderSchema(root: HTMLElement): Promise<void> {
   const host = root.querySelector<HTMLElement>('#schema')!;
   host.innerHTML = '';
   if (!tables.length) return;
 
-  const list = el('div', { class: 'schema-list' });
-  for (const t of tables) {
-    list.append(
-      el('div', { class: 'schema-table' }, [
-        el('div', { class: 'schema-name' }, [`${t.name}`, el('span', { class: 'schema-meta' }, [` — ${t.rows.toLocaleString()} rows`])]),
-        el('div', { class: 'schema-cols' }, [t.columns.join(', ')]),
-      ]),
-    );
+  // Real types from DuckDB — the reference users paste into an AI assistant.
+  const duck = await import('../core/duckdb');
+  let schemas: import('../core/duckdb').TableSchema[] = [];
+  try {
+    schemas = await duck.describeTables();
+  } catch {
+    // Fall back to name-only pills if describe fails.
   }
-  host.append(el('div', { class: 'file-list-head' }, ['Available tables (use these names in your SQL)']), list);
+
+  const copyBtn = button('Copy schema for AI', async () => {
+    const text = schemas.length
+      ? duck.schemaText(schemas)
+      : tables.map((t) => `Table "${t.name}": ${t.columns.join(', ')}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('Schema copied — paste it into your AI assistant along with what you want.', 'success', 5000);
+    } catch {
+      // Clipboard can be blocked; show the text for manual copy.
+      const ta = el('textarea', { class: 'sql-editor', rows: '10' }) as HTMLTextAreaElement;
+      ta.value = text;
+      host.append(ta);
+      ta.select();
+      toast('Select and copy the schema below.', 'info', 5000);
+    }
+  }, 'btn-ghost');
+
+  const head = el('div', { class: 'schema-head' }, [
+    el('div', { class: 'file-list-head' }, ['Available tables (use these names in your SQL)']),
+    copyBtn,
+  ]);
+
+  const list = el('div', { class: 'schema-detail' });
+  if (schemas.length) {
+    for (const s of schemas) {
+      list.append(
+        el('details', { class: 'schema-block' }, [
+          el('summary', {}, [
+            el('span', { class: 'schema-name' }, [s.table]),
+            el('span', { class: 'schema-meta' }, [` — ${s.rows.toLocaleString()} rows · ${s.columns.length} columns`]),
+          ]),
+          el('div', { class: 'schema-cols-list' },
+            s.columns.map((c) => el('div', { class: 'schema-col' }, [
+              el('span', { class: 'schema-col-name' }, [c.name]),
+              el('span', { class: 'schema-col-type' }, [c.type]),
+            ])),
+          ),
+        ]),
+      );
+    }
+  } else {
+    for (const t of tables) {
+      list.append(
+        el('div', { class: 'schema-table' }, [
+          el('span', { class: 'schema-name' }, [t.name]),
+          el('span', { class: 'schema-meta' }, [` — ${t.rows.toLocaleString()} rows`]),
+        ]),
+      );
+    }
+  }
+  host.append(head, list);
 }
 
 function renderEditor(root: HTMLElement): void {

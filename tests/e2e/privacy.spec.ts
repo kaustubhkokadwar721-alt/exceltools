@@ -28,6 +28,8 @@ test('no external network requests during real tool use', async ({ page, baseURL
   // Intermediate tier: load the DuckDB engine and run a query.
   await page.goto('/#/tool/query');
   await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);
+  await page.waitForSelector('.sheet-stage-row input.col-name', { timeout: 60_000 });
+  await page.click('button:has-text("Register")');
   await page.waitForSelector('.sql-editor', { timeout: 60_000 });
   await page.fill('.sql-editor', 'SELECT Dept, SUM(Amt) AS t FROM staff GROUP BY Dept');
   await page.click('button:has-text("Run query")');

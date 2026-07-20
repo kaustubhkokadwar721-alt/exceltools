@@ -127,6 +127,57 @@ export async function runQuery(sql: string): Promise<QueryOutcome> {
   }
 }
 
+export interface TableSchema {
+  table: string;
+  columns: { name: string; type: string }[];
+  rows: number;
+}
+
+/** Describe every registered table: columns with real DuckDB types + row count. */
+export async function describeTables(): Promise<TableSchema[]> {
+  const db = await getDB();
+  const conn = await db.connect();
+  try {
+    const cols = await conn.query(
+      `SELECT table_name, column_name, data_type FROM information_schema.columns ` +
+        `WHERE table_schema='main' ORDER BY table_name, ordinal_position`,
+    );
+    const byTable = new Map<string, { name: string; type: string }[]>();
+    for (const row of cols.toArray()) {
+      const r = row as Record<string, unknown>;
+      const t = String(r.table_name);
+      if (!byTable.has(t)) byTable.set(t, []);
+      byTable.get(t)!.push({ name: String(r.column_name), type: String(r.data_type) });
+    }
+    const out: TableSchema[] = [];
+    for (const [table, columns] of byTable) {
+      const cnt = await conn.query(`SELECT COUNT(*) AS n FROM "${table.replace(/"/g, '""')}"`);
+      const n = Number((cnt.toArray()[0] as Record<string, unknown>).n);
+      out.push({ table, columns, rows: n });
+    }
+    return out;
+  } finally {
+    await conn.close();
+  }
+}
+
+/**
+ * Plain-text schema for handing to an AI assistant — written so a non-engineer
+ * can paste it plus a request and get working SQL back.
+ */
+export function schemaText(schemas: TableSchema[]): string {
+  const lines: string[] = [
+    'I have these tables in a SQL database (DuckDB syntax). Please write SQL for my request using exactly these table and column names:',
+    '',
+  ];
+  for (const s of schemas) {
+    lines.push(`Table "${s.table}" (${s.rows.toLocaleString()} rows):`);
+    for (const c of s.columns) lines.push(`  - "${c.name}" ${c.type}`);
+    lines.push('');
+  }
+  return lines.join('\n').trimEnd() + '\n';
+}
+
 /** Drop every user table — used when a tool reloads a fresh set of files. */
 export async function resetTables(): Promise<void> {
   if (!dbPromise) return;

@@ -87,6 +87,9 @@ test('Clean: numbers-from-text and trim', async ({ page }) => {
 test('Query: SQL GROUP BY on DuckDB', async ({ page }) => {
   await page.goto('/#/tool/query');
   await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);
+  // Sheets stage first: confirm the row, then register.
+  await page.waitForSelector('.sheet-stage-row input.col-name', { timeout: 60_000 });
+  await page.click('button:has-text("Register")');
   await page.waitForSelector('.sql-editor', { timeout: 60_000 });
   await page.fill('.sql-editor', 'SELECT Dept, SUM(Amt) AS total FROM staff GROUP BY Dept ORDER BY Dept');
   await page.click('button:has-text("Run query")');
@@ -97,6 +100,28 @@ test('Query: SQL GROUP BY on DuckDB', async ({ page }) => {
     ['2', 'IT', '1550'],
     ['3', 'Ops', '1450'],
   ]);
+});
+
+test('Query: rename a staged sheet and read the schema panel', async ({ page }) => {
+  await page.goto('/#/tool/query');
+  await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);
+  await page.waitForSelector('.sheet-stage-row input.col-name', { timeout: 60_000 });
+  await page.fill('.sheet-stage-row input.col-name', 'payroll');
+  await page.click('button:has-text("Register")');
+  await page.waitForSelector('.schema-block', { timeout: 60_000 });
+  // Renamed table appears in the schema reference with real DuckDB types.
+  await page.locator('.schema-block summary:has-text("payroll")').click();
+  const types = await page.locator('.schema-col-type').allTextContents();
+  expect(types.length).toBeGreaterThan(0);
+  expect(types.join(' ')).toMatch(/BIGINT|DOUBLE|VARCHAR/);
+  // Copy-schema affordance exists for handing the schema to an AI assistant.
+  await page.waitForSelector('button:has-text("Copy schema for AI")');
+  // And SQL works against the renamed table.
+  await page.fill('.sql-editor', 'SELECT COUNT(*) AS n FROM payroll');
+  await page.click('button:has-text("Run query")');
+  await page.waitForSelector('#result .grid-row');
+  const rows = await gridRows(page);
+  expect(rows[0][1]).toBe('30');
 });
 
 test('Pivot: group-by aggregate on DuckDB', async ({ page }) => {
