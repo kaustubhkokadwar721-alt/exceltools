@@ -34,7 +34,7 @@ export function mountShell(root: HTMLElement): void {
           <div class="side-line" id="engine"><span class="dot"></span><span class="txt">Ready</span></div>
           <details class="side-privacy">
             <summary><span class="dot"></span>Private by design</summary>
-            <div class="side-privacy-body">Your files are read on this computer and nowhere else. Nothing is uploaded — switch off Wi-Fi and keep working.</div>
+            <div class="side-privacy-body">Your files are read on this computer and nowhere else. Nothing is uploaded — switch off Wi-Fi and keep working. <a class="pv-link" href="#/privacy">How does that work?</a></div>
           </details>
           <div class="side-line side-foot-line"><span class="dot"></span>Offline · nothing leaves this device</div>
         </div>
@@ -83,6 +83,11 @@ function setActiveNav(id: string | null): void {
 
 function renderRoute(content: HTMLElement, route: Route): void {
   setAppStatus('Ready', 'success');
+  if (route.name === 'privacy') {
+    setActiveNav(null);
+    import('./privacy').then(({ renderPrivacy }) => renderPrivacy(content));
+    return;
+  }
   if (route.name === 'home') {
     setActiveNav(null);
     renderHome(content);

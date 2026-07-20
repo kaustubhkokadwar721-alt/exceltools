@@ -2,18 +2,19 @@
 // share, or file:// — no server rewrite rules needed (important for offline
 // deployment on locked-down PCs).
 
-export type Route = { name: 'home' } | { name: 'tool'; id: string };
+export type Route = { name: 'home' } | { name: 'tool'; id: string } | { name: 'privacy' };
 
 export function parseHash(hash: string): Route {
   const clean = hash.replace(/^#\/?/, '').trim();
   if (!clean) return { name: 'home' };
   const [section, id] = clean.split('/');
   if (section === 'tool' && id) return { name: 'tool', id };
+  if (section === 'privacy') return { name: 'privacy' };
   return { name: 'home' };
 }
 
 export function navigate(route: Route): void {
-  location.hash = route.name === 'home' ? '#/' : `#/tool/${route.id}`;
+  location.hash = route.name === 'home' ? '#/' : route.name === 'privacy' ? '#/privacy' : `#/tool/${route.id}`;
 }
 
 export function onRouteChange(cb: (route: Route) => void): void {
