@@ -11,7 +11,7 @@ const OVERSCAN = 6; // rows rendered beyond the viewport on each side
 const MIN_W = 40;
 const MAX_AUTO_W = 340; // initial auto-fit cap; drag/dblclick can exceed
 const MAX_FIT_W = 600; // dblclick full-content autofit cap
-const CHAR_PX = 7.2; // approx px per character at 13.5px body font
+const CHAR_PX = 7.8; // approx px per character at 14.5px body font
 const SAMPLE = 50; // rows sampled for the initial auto-fit
 
 // Session-scoped width memory: same column set → same widths across re-renders
