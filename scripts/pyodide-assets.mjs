@@ -21,7 +21,12 @@ console.log(`pyodide core staged (${CORE.length} files)`);
 
 const lock = (await import('file://' + join(src, 'pyodide-lock.json'), { with: { type: 'json' } })).default;
 const version = JSON.parse((await import('node:fs')).readFileSync(join(src, 'package.json'), 'utf8')).version;
-const WANT = ['pandas', 'numpy', 'python-dateutil', 'pytz', 'six'];
+const WANT = [
+  // pandas set
+  'pandas', 'numpy', 'python-dateutil', 'pytz', 'six',
+  // matplotlib set (charts in the notebook)
+  'matplotlib', 'contourpy', 'cycler', 'fonttools', 'kiwisolver', 'packaging', 'pillow', 'pyparsing',
+];
 const wheels = WANT.map((n) => lock.packages[n]?.file_name).filter(Boolean);
 
 function download(url, dest) {

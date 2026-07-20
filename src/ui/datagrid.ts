@@ -1,32 +1,46 @@
 // Virtualized table for previewing sheet data. Only renders the rows currently
 // in view, so a 100k-row preview stays smooth. Columns auto-fit their header +
-// sampled content and can be resized by dragging the header edge. Shared by
-// every tool that shows tabular results.
+// sampled content, have a visible drag handle for manual resizing (min 40px,
+// no upper cap), double-click a handle to autofit the full loaded column, and
+// user widths persist for the session per column-set so re-renders keep them.
+// Shared by every tool that shows tabular results.
 import type { SheetData, CellValue } from '../core/types';
 
 const ROW_HEIGHT = 28; // px, must match CSS .grid-row height
 const OVERSCAN = 6; // rows rendered beyond the viewport on each side
-const MIN_W = 60;
-const MAX_AUTO_W = 340; // auto-fit cap; user can drag wider
+const MIN_W = 40;
+const MAX_AUTO_W = 340; // initial auto-fit cap; drag/dblclick can exceed
+const MAX_FIT_W = 600; // dblclick full-content autofit cap
 const CHAR_PX = 7.2; // approx px per character at 13.5px body font
-const SAMPLE = 50; // rows sampled for auto-fit
+const SAMPLE = 50; // rows sampled for the initial auto-fit
+
+// Session-scoped width memory: same column set → same widths across re-renders
+// (e.g. re-running a query or notebook cell). Nothing is persisted to storage.
+const savedWidths = new Map<string, number[]>();
 
 export function createDataGrid(sheet: SheetData): HTMLElement {
   const container = document.createElement('div');
   container.className = 'grid';
 
-  // Auto-fit each column from its header and a sample of its values.
-  const widths = sheet.headers.map((h, ci) => {
+  const sig = sheet.headers.join('');
+  const fitWidth = (ci: number, rowLimit: number, cap: number): number => {
     // Headers render uppercase with letter-spacing → ~35% wider than body text.
-    let chars = Math.ceil(String(h).length * 1.35) + 2;
-    const n = Math.min(sheet.rows.length, SAMPLE);
+    let chars = Math.ceil(String(sheet.headers[ci]).length * 1.35) + 2;
+    const n = Math.min(sheet.rows.length, rowLimit);
     for (let r = 0; r < n; r++) {
       const v = sheet.rows[r][ci];
       if (v !== null && v !== undefined) chars = Math.max(chars, String(v).length);
     }
-    return Math.min(MAX_AUTO_W, Math.max(MIN_W, Math.round(chars * CHAR_PX) + 26));
-  });
+    return Math.min(cap, Math.max(MIN_W, Math.round(chars * CHAR_PX) + 26));
+  };
 
+  const remembered = savedWidths.get(sig);
+  const widths =
+    remembered && remembered.length === sheet.headers.length
+      ? [...remembered]
+      : sheet.headers.map((_, ci) => fitWidth(ci, SAMPLE, MAX_AUTO_W));
+
+  const remember = () => savedWidths.set(sig, [...widths]);
   const template = () => `48px ${widths.map((w) => `${w}px`).join(' ')}`;
 
   // Header (sticky, outside the scroll virtualization) with resize handles.
@@ -37,7 +51,7 @@ export function createDataGrid(sheet: SheetData): HTMLElement {
     sheet.headers
       .map(
         (h, i) =>
-          `<div class="grid-cell" title="${escapeHtml(h)}">${escapeHtml(h)}<span class="grid-resize" data-col="${i}" title="Drag to resize"></span></div>`,
+          `<div class="grid-cell" title="${escapeHtml(h)}">${escapeHtml(h)}<span class="grid-resize" data-col="${i}" title="Drag to resize · double-click to fit"><span class="grid-resize-bar"></span></span></div>`,
       )
       .join('');
   container.appendChild(header);
@@ -91,7 +105,7 @@ export function createDataGrid(sheet: SheetData): HTMLElement {
     { passive: true },
   );
 
-  // Drag-to-resize on header handles.
+  // Drag-to-resize + double-click autofit on header handles.
   header.addEventListener('pointerdown', (e) => {
     const handle = (e.target as HTMLElement).closest<HTMLElement>('.grid-resize');
     if (!handle) return;
@@ -99,16 +113,27 @@ export function createDataGrid(sheet: SheetData): HTMLElement {
     const col = Number(handle.dataset.col);
     const startX = e.clientX;
     const startW = widths[col];
+    handle.classList.add('dragging');
     const onMove = (ev: PointerEvent) => {
       widths[col] = Math.max(MIN_W, startW + (ev.clientX - startX));
       applyTemplate();
     };
     const onUp = () => {
+      handle.classList.remove('dragging');
+      remember();
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+  });
+  header.addEventListener('dblclick', (e) => {
+    const handle = (e.target as HTMLElement).closest<HTMLElement>('.grid-resize');
+    if (!handle) return;
+    const col = Number(handle.dataset.col);
+    widths[col] = fitWidth(col, sheet.rows.length, MAX_FIT_W);
+    remember();
+    applyTemplate();
   });
 
   requestAnimationFrame(() => {

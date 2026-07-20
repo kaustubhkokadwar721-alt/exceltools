@@ -43,7 +43,7 @@ fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 | **Clean** | Trim, collapse spaces, fix case, numbers-from-text, drop blank rows/cols |
 | **Dedupe** | Remove duplicate rows by chosen key columns, keeping first or last |
 | **Query (SQL)** | *(SQL engine)* Stage, rename and register sheets/tables, then run SQL — joins, filters, aggregation |
-| **Python** | *(Python engine)* pandas DataFrames + pure Python — cleaning, custom rules, stats; same staging + copy-schema-for-AI loop |
+| **Python notebook** | *(Python engine)* Jupyter-style cells in the browser — pandas, matplotlib charts, `.ipynb` save/load, no Python install |
 | **Pivot** | *(SQL engine)* Group-by + aggregate summaries (Sum/Avg/Count/Min/Max) |
 
 ### Query workflow (built for non-engineers)
@@ -66,7 +66,7 @@ Two-tier engine strategy — match the engine to the tool:
 |------|-------|--------|--------|
 | **Light** | view, convert, merge, split, clean, dedupe, compare | SheetJS (`xlsx`) | up front (small) |
 | **SQL engine** | query, pivot | DuckDB-WASM | lazily on first use, then cached offline |
-| **Python engine** | python | Pyodide (Python 3.14 + pandas) | lazily on first use, then cached offline |
+| **Python engine** | python notebook | Pyodide (Python 3.14 + pandas + matplotlib) | lazily on first use, then cached offline |
 
 > The Python engine required adding `'unsafe-eval'` to the CSP (Pyodide's
 > Emscripten glue evals at init). The no-exfiltration guarantee
@@ -143,5 +143,5 @@ horizontal overflow.
 - **Phase 5** — hardening ✅ (tests, CI gate, security attestation, measured
   perf limits, fidelity docs) · **remaining:** real-PC spike + pilot + v1.0 —
   see [`docs/PHASE5-PLAN.md`](docs/PHASE5-PLAN.md)
-- **Later** — charts; extending the table/column setup (`SourceSpec`) to the
-  remaining tools
+- **Later** — extending the table/column setup (`SourceSpec`) to the remaining
+  tools

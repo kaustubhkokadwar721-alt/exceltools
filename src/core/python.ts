@@ -1,48 +1,55 @@
-// Lazy Python engine (Pyodide) for the Python analysis tool. Everything is
-// self-hosted under /pyodide/ (staged by scripts/pyodide-assets.mjs); pandas
-// wheels are included in CI builds and the engine degrades to pure Python when
-// they're absent. This module is only imported when the Python tool opens.
+// Lazy Python engine (Pyodide) behind the notebook tool. Self-hosted under
+// /pyodide/ (staged by scripts/pyodide-assets.mjs); pandas + matplotlib wheels
+// are included in CI builds and each degrades gracefully when absent. Globals
+// persist across cells — that's what makes it a notebook.
 import PythonWorker from '../workers/python.worker?worker';
 import type { SheetData, CellValue } from './types';
 
-interface RunResult {
-  sheet: SheetData;
+export type CellOut =
+  | { type: 'table'; headers: string[]; rows: CellValue[][] }
+  | { type: 'image'; png: string }
+  | { type: 'text'; text: string };
+
+export interface CellResult {
+  ok: boolean;
+  stdout: string;
+  outputs: CellOut[];
+  error?: string;
   elapsedMs: number;
 }
 
+export interface EngineInfo {
+  pandas: boolean;
+  charts: boolean;
+}
+
 let worker: Worker | null = null;
-let readyPromise: Promise<{ pandas: boolean }> | null = null;
+let readyPromise: Promise<EngineInfo> | null = null;
 let nextId = 1;
-const pendingRuns = new Map<number, { resolve: (r: RunResult) => void; reject: (e: Error) => void }>();
+const pendingCells = new Map<number, { resolve: (r: CellResult) => void }>();
 let pendingRegister: { resolve: () => void; reject: (e: Error) => void } | null = null;
 
 function indexURL(): string {
   return new URL(import.meta.env.BASE_URL + 'pyodide/', document.baseURI).href;
 }
 
-/** Boot the engine (idempotent). Resolves with pandas availability. */
-export function initPython(): Promise<{ pandas: boolean }> {
+/** Boot the engine (idempotent). Resolves with pandas/charts availability. */
+export function initPython(): Promise<EngineInfo> {
   if (readyPromise) return readyPromise;
   readyPromise = new Promise((resolve, reject) => {
     worker = new PythonWorker();
     worker.onmessage = (ev) => {
       const m = ev.data;
-      if (m.kind === 'ready') resolve({ pandas: m.pandas });
+      if (m.kind === 'ready') resolve({ pandas: m.pandas, charts: m.charts });
       else if (m.kind === 'registered') pendingRegister?.resolve();
       else if (m.kind === 'error') {
         pendingRegister?.reject(new Error(m.error));
         reject(new Error(m.error));
-      } else if (m.kind === 'result') {
-        const p = pendingRuns.get(m.id);
+      } else if (m.kind === 'cellResult') {
+        const p = pendingCells.get(m.id);
         if (!p) return;
-        pendingRuns.delete(m.id);
-        if (m.ok) {
-          const rows = (m.table.rows as CellValue[][]) ?? [];
-          p.resolve({
-            sheet: { name: 'Result', headers: m.table.headers ?? [], rows, totalRows: rows.length },
-            elapsedMs: m.elapsedMs ?? 0,
-          });
-        } else p.reject(new Error(m.error));
+        pendingCells.delete(m.id);
+        p.resolve({ ok: m.ok, stdout: m.stdout ?? '', outputs: m.outputs ?? [], error: m.error, elapsedMs: m.elapsedMs ?? 0 });
       }
     };
     worker.onerror = (e) => reject(new Error(e.message || 'Python worker crashed'));
@@ -60,13 +67,13 @@ export async function registerPyTable(name: string, sheet: SheetData): Promise<v
   });
 }
 
-/** Run user Python; the code must assign `result`. */
-export async function runPython(code: string): Promise<RunResult> {
+/** Run one notebook cell. Never rejects — errors come back in the result. */
+export async function runCell(code: string): Promise<CellResult> {
   await initPython();
   const id = nextId++;
-  return new Promise((resolve, reject) => {
-    pendingRuns.set(id, { resolve, reject });
-    worker!.postMessage({ kind: 'run', id, code });
+  return new Promise((resolve) => {
+    pendingCells.set(id, { resolve });
+    worker!.postMessage({ kind: 'runCell', id, code });
   });
 }
 
