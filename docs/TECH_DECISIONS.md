@@ -89,6 +89,20 @@ Fixed with `skipWaiting` + `clientsClaim` + `cleanupOutdatedCaches`, plus a
 one-time guarded reload on `vite:preloadError` (`src/main.ts`) and on
 chunk-fetch-looking mount failures (`src/app/shell.ts`).
 
+## Decision 10 — Python tier on Pyodide; CSP relaxed to allow it
+
+A Python (pandas) analysis tool was added on **Pyodide** (Python 3.14 in wasm),
+lazy-loaded like DuckDB and self-hosted under `/pyodide/`
+(`scripts/pyodide-assets.mjs` stages core from node_modules and best-effort
+downloads the pandas wheel set — CI always has them; an offline dev box falls
+back to pure Python and the tool degrades gracefully). Spike-verified: Pyodide's
+Emscripten glue **requires `eval`**, so `script-src` now includes
+`'unsafe-eval'` — an explicit, user-approved tradeoff documented in
+`docs/SECURITY.md`; `connect-src 'self'` (the exfiltration block) is unchanged
+and CI-enforced. The worker exposes each registered table as
+`tables["name"]` (list of dicts) and, when pandas is present, `df_<name>`
+DataFrames; user code assigns `result`, which is converted back to a grid.
+
 ## Open risks carried into later phases
 
 1. **Deployment on locked-down PCs** — CSP overrides, `file://` WASM restrictions,

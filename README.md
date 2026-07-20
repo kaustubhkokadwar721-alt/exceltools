@@ -43,6 +43,7 @@ fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 | **Clean** | Trim, collapse spaces, fix case, numbers-from-text, drop blank rows/cols |
 | **Dedupe** | Remove duplicate rows by chosen key columns, keeping first or last |
 | **Query (SQL)** | *(SQL engine)* Stage, rename and register sheets/tables, then run SQL — joins, filters, aggregation |
+| **Python** | *(Python engine)* pandas DataFrames + pure Python — cleaning, custom rules, stats; same staging + copy-schema-for-AI loop |
 | **Pivot** | *(SQL engine)* Group-by + aggregate summaries (Sum/Avg/Count/Min/Max) |
 
 ### Query workflow (built for non-engineers)
@@ -65,6 +66,12 @@ Two-tier engine strategy — match the engine to the tool:
 |------|-------|--------|--------|
 | **Light** | view, convert, merge, split, clean, dedupe, compare | SheetJS (`xlsx`) | up front (small) |
 | **SQL engine** | query, pivot | DuckDB-WASM | lazily on first use, then cached offline |
+| **Python engine** | python | Pyodide (Python 3.14 + pandas) | lazily on first use, then cached offline |
+
+> The Python engine required adding `'unsafe-eval'` to the CSP (Pyodide's
+> Emscripten glue evals at init). The no-exfiltration guarantee
+> (`connect-src 'self'`) is unchanged and CI-enforced — rationale in
+> [`docs/SECURITY.md`](docs/SECURITY.md).
 
 - All spreadsheet parsing runs in a **Web Worker** — the UI never freezes.
 - Each tool is a lazily-loaded chunk; the ~40 MB DuckDB engine is excluded from

@@ -5,8 +5,9 @@
   "description": "Offline, browser-based suite of Excel tools running fully client-side (WASM-ready). No data leaves the machine.",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "dev": "npm run pyodide-assets && vite",
+    "pyodide-assets": "node scripts/pyodide-assets.mjs",
+    "build": "npm run pyodide-assets && tsc --noEmit && vite build",
     "preview": "vite preview",
     "package": "npm run build && node scripts/package.mjs",
     "typecheck": "tsc --noEmit",
@@ -17,6 +18,7 @@
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.29.0",
     "fflate": "^0.8.2",
+    "pyodide": "^314.0.2",
     "xlsx": "0.18.5"
   },
   "devDependencies": {

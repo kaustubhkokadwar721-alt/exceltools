@@ -22,7 +22,7 @@ export default defineConfig({
         // engine (~40 MB of wasm) is deliberately excluded so light-tool users
         // never pay for it; it is runtime-cached on first Tier-2 use instead.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        globIgnores: ['**/duckdb-*'],
+        globIgnores: ['**/duckdb-*', 'pyodide/**'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         // Self-heal across deploys: a new SW activates immediately, takes over
         // open tabs, and purges the previous precache — so a returning client
@@ -39,6 +39,17 @@ export default defineConfig({
             options: {
               cacheName: 'duckdb-engine',
               expiration: { maxEntries: 12 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // Python engine (Pyodide core + wheels): cached on first use of the
+            // Python tool, then available offline. Excluded from precache above.
+            urlPattern: ({ url }) => url.pathname.includes('/pyodide/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'python-engine',
+              expiration: { maxEntries: 24 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
