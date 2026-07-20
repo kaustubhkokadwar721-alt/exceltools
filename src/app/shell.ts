@@ -51,12 +51,9 @@ export function mountShell(root: HTMLElement): void {
 }
 
 function buildNav(nav: HTMLElement): void {
-  // Explicit engine grouping: Query/Pivot run on DuckDB (SQL), the notebook on
-  // Pyodide (Python) — they are separate engines and read wrong under one label.
   const groups = [
-    { label: 'Light tools', cls: '', ids: TOOLS.filter((t) => t.tier === 'light').map((t) => t.id) },
-    { label: 'SQL engine', cls: 'sql', ids: ['query', 'pivot'] },
-    { label: 'Python engine', cls: 'py', ids: ['python'] },
+    { label: 'Quick tools', cls: '', ids: TOOLS.filter((t) => t.tier === 'light').map((t) => t.id) },
+    { label: 'Data analysis tools', cls: 'sql', ids: ['query', 'pivot', 'python'] },
   ];
   const item = (t: (typeof TOOLS)[number]) => `
     <a class="nav-item ${t.status}" href="#/tool/${t.id}" data-id="${t.id}">
@@ -138,8 +135,8 @@ function renderHome(content: HTMLElement): void {
       <h1>Spreadsheet tools</h1>
       <p>Everything runs on this computer — files are never uploaded. Choose a tool to begin.</p>
     </div>
-    <div class="section-title"><span class="dot"></span><b>Light tools</b><span>instant, no download</span></div>
+    <div class="section-title"><span class="dot"></span><b>Quick tools</b><span>instant, no download</span></div>
     ${grid('light')}
-    <div class="section-title sql"><span class="dot"></span><b>SQL Engine</b><span>downloads once on first use, then works offline</span></div>
+    <div class="section-title sql"><span class="dot"></span><b>Data analysis tools</b><span>engine downloads once on first use, then works offline</span></div>
     ${grid('intermediate')}`;
 }
