@@ -9,6 +9,10 @@ What survives a round-trip through ExcelTools, and what does not. The suite is a
 - Sheet and column structure; multiple sheets when the target format supports
   them (`.xlsx`).
 - Row order.
+- **Native Excel Tables (ListObjects)** on *read*: their name, exact range and
+  declared column names are extracted (Query and Convert), so a table embedded
+  among titles/junk cells imports cleanly. Table *styling* and structured
+  references are not carried into outputs.
 
 ## Not preserved (known limits)
 

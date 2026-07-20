@@ -2,112 +2,95 @@
 
 An **offline, all-in-one suite of spreadsheet tools** that runs fully in the
 browser on work PCs. No backend, no uploads — every file is processed on the
-user's machine. Deployable as static files or an installable PWA.
+user's machine. Deployable as static files, an offline zip, or an installable
+PWA. Built for accountants and finance teams, not engineers.
 
-> **Status:** Phases 0–3 complete. Nine tools live and verified — six light-tier
-> (SheetJS) and two intermediate-tier (DuckDB-WASM). See [`docs/`](docs/).
+> **Status:** Phases 0–4 complete; Phase 5 hardening mostly done (tests, CI,
+> security, performance, fidelity — only the real-PC pilot remains). Nine tools
+> live, plus native Excel Table import. 34 unit + 12 E2E tests in CI.
+> See [`docs/`](docs/).
 
-## Live app & WASM capability spike
-
-> A GitHub `blob/…` link only *shows* a file's source — it doesn't run it. Use a
-> link that **serves** the page.
-
-**Run the spike right now (no setup):** served live via githack —
-https://raw.githack.com/kaustubhkokadwar721-alt/exceltools/main/spike/wasm-spike.html
-
-**Permanent links (after enabling GitHub Pages, one-time — see below):**
+## Live app
 
 - **App:** https://kaustubhkokadwar721-alt.github.io/exceltools/
 - **WASM capability spike:**
   https://kaustubhkokadwar721-alt.github.io/exceltools/spike/wasm-spike.html
+  (also runnable without Pages via githack:
+  https://raw.githack.com/kaustubhkokadwar721-alt/exceltools/main/spike/wasm-spike.html)
 
-The whole suite depends on WebAssembly, Web Workers, service workers and the
-File API being allowed on the target machine. The spike is a self-contained
-probe that reports PASS/FAIL for each and never uploads anything — run it on a
-target PC before rolling out. What it checks and how to read the results:
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
-
-### Publishing (GitHub Pages)
-
-`.github/workflows/deploy.yml` builds the static bundle and publishes it to
-Pages on every push to `main`.
-
-**One-time setup (required — the workflow can't do this itself):** in the repo,
-open **Settings → Pages → Build and deployment → Source** and select
-**GitHub Actions**. Then re-run the latest *Deploy to GitHub Pages* action (or
-push any commit to `main`). Until Pages is enabled this way, the deploy job
-fails at `configure-pages` with `Get Pages site failed … Not Found` — that error
-means only "Pages isn't enabled yet", not a build problem.
-
-The build uses a relative base, so it also works from any static host, network
-share, or offline PWA install — Pages is just the easiest way to get a running
-link.
+The suite depends on WebAssembly, Web Workers, service workers and the File API
+being allowed on the target machine. The spike is a self-contained probe that
+reports PASS/FAIL for each and never uploads anything — run it on a target PC
+before rolling out. Details: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Why
 
 Corporate environments often forbid uploading spreadsheets to online tools. This
 suite does everything **client-side** — enforced by a strict CSP
-(`connect-src 'self'`), so data physically cannot leave the PC.
+(`connect-src 'self'`), so data physically cannot leave the PC. That claim is
+**tested in CI**: an E2E spec exercises the tools (including the SQL engine) and
+fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 
-## Architecture (locked in Phase 0)
-
-Two-tier engine strategy — match the engine to the tool:
-
-| Tier | Tools | Engine | Loaded |
-|------|-------|--------|--------|
-| **Light** | view, convert, merge, split, clean, dedupe, compare | SheetJS (`xlsx`) | up front (~small) |
-| **Intermediate** | query (SQL), pivot, calc, charts | DuckDB-WASM (Pyodide in reserve) | lazily, on first use |
-
-All spreadsheet parsing runs in a **Web Worker**, so the UI never freezes. Each
-tool is a lazily-loaded chunk, so the base app stays ~9 KB and a tool's cost is
-only paid when it's opened. Full rationale in
-[`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
-
-## Tools (Phase 2 — all live)
+## Tools
 
 | Tool | What it does |
 |------|--------------|
 | **Viewer** | Open and browse any spreadsheet without Excel |
-| **Convert** | One sheet → CSV / TSV / JSON / Markdown / HTML / XLSX |
+| **Convert** | A sheet **or a native Excel Table** → CSV / TSV / JSON / Markdown / HTML / XLSX |
 | **Merge** | Combine files — stack rows (aligned by column name) or keep each as a sheet |
 | **Split** | Split a sheet into many files by column value or row count → one `.zip` |
 | **Compare** | Diff two sheets on a key column: added / removed / changed / unchanged |
 | **Clean** | Trim, collapse spaces, fix case, numbers-from-text, drop blank rows/cols |
 | **Dedupe** | Remove duplicate rows by chosen key columns, keeping first or last |
-| **Query (SQL)** | *(intermediate)* Register sheets as tables and run SQL — joins, filters, aggregation |
-| **Pivot** | *(intermediate)* Group-by + aggregate summaries (Sum/Avg/Count/Min/Max) |
+| **Query (SQL)** | *(SQL engine)* Stage, rename and register sheets/tables, then run SQL — joins, filters, aggregation |
+| **Pivot** | *(SQL engine)* Group-by + aggregate summaries (Sum/Avg/Count/Min/Max) |
 
-## What's built
+### Query workflow (built for non-engineers)
 
-**Phase 0 — Foundation & Validation**
-- Vite + TypeScript static-bundle scaffold, relative base, strict CSP
-- PWA shell (service worker precache → true offline)
-- WASM/worker/SW/File-API capability spike (see above)
-- Engine + tooling decisions recorded
+1. Drop files. Each sheet — or each **native Excel Table** (ListObject), detected
+   with its real name, exact range and columns — is **staged**: untick what you
+   don't want, rename tables, and for Excel Tables pick columns and set types
+   (or *skip type detection* to import everything as text). Then **Register**.
+2. A **sticky schema rail** beside the SQL editor shows every table with its
+   columns, real DuckDB types and row counts — always visible while writing SQL.
+3. **Copy schema for AI** copies a plain-text schema preamble. Paste it into any
+   AI assistant with a request in plain English ("give me department totals"),
+   paste the SQL it writes back into the editor, and run.
 
-**Phase 1 — Core Shell & Infrastructure**
-- App shell: sidebar, home tool grid, hash router (works from any path / share)
-- File I/O layer: drag-drop + picker, local download helpers
-- Unified parser wrapper over `.xlsx/.xls/.csv/.tsv/.ods` via SheetJS
-- Typed Web Worker harness (off-main-thread parse/serialize)
-- Virtualized data grid (renders only visible rows)
-- Central validation + toast error/warning UI
+## Architecture
 
-**Phase 2 — Light Tools**
-- The seven tools above, each a lazy chunk over the shared off-thread parser
-- Pure, testable transforms in `src/core/transform.ts`
-  (mergeStack, splitByColumn, splitByRows, diffSheets, dedupeByKeys, cleanSheet)
-- Multi-file zip output via `fflate` (loads only with Split)
+Two-tier engine strategy — match the engine to the tool:
 
-**Phase 3 — Intermediate Tools (DuckDB-WASM)**
-- Query (SQL) and Pivot, running fully in-browser on a lazy-loaded, self-hosted
-  DuckDB-WASM engine (`src/core/duckdb.ts`) — no CDN, CSP-clean
-- The ~40 MB engine is excluded from precache and runtime-cached on first use,
-  so light-tool users never download it (precache stays ~488 KiB)
+| Tier | Tools | Engine | Loaded |
+|------|-------|--------|--------|
+| **Light** | view, convert, merge, split, clean, dedupe, compare | SheetJS (`xlsx`) | up front (small) |
+| **SQL engine** | query, pivot | DuckDB-WASM | lazily on first use, then cached offline |
 
-Every tool has been driven end-to-end in headless Chromium with correct results
-and zero console errors, including a full **offline reload** after cutting the
-network and an in-browser SQL `GROUP BY` returning correct per-group aggregates.
+- All spreadsheet parsing runs in a **Web Worker** — the UI never freezes.
+- Each tool is a lazily-loaded chunk; the ~40 MB DuckDB engine is excluded from
+  the PWA precache and runtime-cached on first Query/Pivot use, so light-tool
+  users never download it (precache stays < 700 KiB).
+- **Native Excel Tables** are extracted directly from the xlsx zip
+  (`src/core/tables.ts`) since SheetJS doesn't surface them; tables register into
+  DuckDB with exact per-column types via a typed-CSV load
+  (Arrow was rejected: its codegen needs `eval`, which our CSP forbids).
+- The service worker **self-heals across deploys** (`skipWaiting` +
+  `clientsClaim` + `cleanupOutdatedCaches`), and a stale lazy-chunk fetch
+  triggers one guarded auto-reload — returning users always get the current app.
+
+Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
+
+## Quality
+
+- **34 unit tests** (Vitest) over the pure transform/validation/zip/table/source
+  modules and **12 E2E tests** (Playwright) — one per tool plus Excel-Table
+  import, staged rename + schema, and a **no-external-requests privacy guard**.
+- CI (`.github/workflows/test.yml`) runs typecheck + unit + E2E on every PR and
+  push to `main`; deploys only happen from `main`.
+- Measured performance limits (soft warn 25 MB, hard cap 100 MB) —
+  [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+- Documented format-fidelity boundaries — [`docs/FIDELITY.md`](docs/FIDELITY.md).
+- Security & privacy attestation — [`docs/SECURITY.md`](docs/SECURITY.md).
 
 ## Develop
 
@@ -116,43 +99,42 @@ npm install
 npm run dev        # dev server
 npm run build      # → dist/ (static, self-contained)
 npm run preview    # serve dist/ locally; test PWA + offline in DevTools
+npm run test       # 34 unit tests (Vitest)
+npm run test:e2e   # 12 E2E tests (Playwright, against the production build)
 npm run package    # → exceltools-offline.zip (offline distributable)
 npm run typecheck
 ```
 
-## Offline distributable
+## Deployment
 
-`npm run package` bundles the built app, the capability spike, and a
-zero-dependency local-server launcher into `exceltools-offline.zip` (~16 MB).
-On a target PC: unzip, run `python serve.py` (or `node serve.mjs`), and the full
-suite runs at `http://127.0.0.1:8000/` — no internet, no install. See
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+**GitHub Pages (automatic):** `.github/workflows/deploy.yml` builds and
+publishes on every push to `main`. One-time setup if forking: Settings → Pages →
+Source → **GitHub Actions**.
 
-## Validate offline deployment (before rollout)
-
-Copy [`spike/wasm-spike.html`](spike/wasm-spike.html) to a target work PC and
-open it — it reports PASS/FAIL for WASM, Web Workers, service workers, File API,
-and downloads. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
-
-## Roadmap
-
-- **Phase 2** — ✅ Light tools (Convert, Merge, Split, Clean, Dedupe, Compare)
-- **Phase 3** — ✅ Intermediate tools on DuckDB-WASM (Query, Pivot) — Charts next
-- **Phase 4** — ✅ Polish & packaging — warm register design system, in-app help
-  ("How this works" per tool), and an **offline distributable** (`npm run
-  package` → `exceltools-offline.zip` with a zero-dependency local launcher).
-- **Phase 5** — Hardening, pilot, rollout — see
-  [`docs/PHASE5-PLAN.md`](docs/PHASE5-PLAN.md).
+**Offline distributable:** `npm run package` bundles the app, the capability
+spike, and a zero-dependency local-server launcher into
+`exceltools-offline.zip` (~16 MB). On a target PC: unzip, run `python serve.py`
+(or `node serve.mjs`), and the full suite runs at `http://127.0.0.1:8000/` — no
+internet, no install. The build uses a relative base, so any internal static
+host or network share also works. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Design
 
 Warm "register" theme — a left sidebar (brand, tier-grouped nav, engine +
 privacy cards) and one working surface. Typography pairs **Newsreader** (serif
 display), **Instrument Sans** (interface) and **Spline Sans Mono** (data/IDs);
-all three are **self-hosted** (offline-safe, CSP-clean). Colour is semantic:
-green = primary action / trust, amber (gold) = the SQL-engine tier and review,
-red = error — always paired with text. Verified in-browser at desktop, laptop,
-tablet and 390px mobile with no horizontal overflow.
+all three **self-hosted** (offline-safe, CSP-clean). Colour is semantic: green =
+primary action / trust, gold = the SQL-engine tier and review, red = error —
+always paired with text. Data grids auto-fit column widths and support
+drag-to-resize. Verified at desktop, laptop, tablet and 390 px mobile with no
+horizontal overflow.
 
-Each planned tool already appears in the shell (marked *soon*) and plugs into
-the existing engine via `src/app/registry.ts`.
+## Roadmap
+
+- **Phases 0–4** — ✅ foundation, shell, seven light tools, DuckDB tier, design
+  system, in-app help, offline packaging
+- **Phase 5** — hardening ✅ (tests, CI gate, security attestation, measured
+  perf limits, fidelity docs) · **remaining:** real-PC spike + pilot + v1.0 —
+  see [`docs/PHASE5-PLAN.md`](docs/PHASE5-PLAN.md)
+- **Later** — charts; extending the table/column setup (`SourceSpec`) to the
+  remaining tools

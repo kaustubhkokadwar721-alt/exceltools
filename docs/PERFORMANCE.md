@@ -28,6 +28,18 @@ client tolerates less.
 - `HARD_SIZE_LIMIT_BYTES = 100 MB` — above this the file is rejected to avoid an
   OOM crash. Lowered from 250 MB after the crash above.
 
+## Why DuckDB (vs SQLite / Power Query)
+
+The workload is analytics — full-column scans, `GROUP BY`, joins on
+spreadsheet-sized data. DuckDB is columnar + vectorized and, order-of-magnitude,
+runs such queries **~10–30× faster** than SQLite's row store in-browser (the gap
+widens with row count, and more again on unindexed joins, since DuckDB hash-joins
+without needing indexes). SQLite's advantages — ~1 MB wasm vs ~40 MB, faster cold
+start, point lookups — don't fit this workload; the 40 MB cost is paid once,
+lazily, and cached. Power Query isn't embeddable outside Excel/Power BI and is
+single-threaded row-pipeline on loaded data, so it was never a candidate.
+Measured anchor above: `GROUP BY` over 200k rows in ~70 ms.
+
 ## Guidance
 
 - For very large data, prefer **Query/Pivot** over Viewer/Convert — DuckDB is the
