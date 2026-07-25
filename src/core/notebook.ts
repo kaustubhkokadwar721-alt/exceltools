@@ -131,13 +131,16 @@ function outputFromIpynb(o: IpynbOutput): NotebookOutput | null {
 }
 
 /** Serialize cells — sources, outputs and errors — to an nbformat-4 string. */
-export function toIpynb(cells: NotebookCell[]): string {
+export function toIpynb(cells: NotebookCell[], title?: string): string {
   const nb = {
     nbformat: 4,
     nbformat_minor: 5,
     metadata: {
       kernelspec: { display_name: 'Python (Pyodide)', language: 'python', name: 'python3' },
       language_info: { name: 'python', version: '3.14' },
+      // What this piece of work is called, so a filed notebook is identifiable
+      // by more than its filename. Jupyter carries unknown metadata untouched.
+      ...(title?.trim() ? { exceltools: { title: title.trim() } } : {}),
     },
     cells: cells.map((c): IpynbCell => {
       // Folded state travels in the fields Jupyter itself uses, so a notebook
@@ -168,6 +171,17 @@ export function toIpynb(cells: NotebookCell[]): string {
     }),
   };
   return JSON.stringify(nb, null, 1);
+}
+
+/** The name this notebook was saved under, if it carries one. */
+export function titleFromIpynb(json: string): string {
+  try {
+    const nb = JSON.parse(json) as { metadata?: { exceltools?: { title?: unknown } } };
+    const title = nb.metadata?.exceltools?.title;
+    return typeof title === 'string' ? title : '';
+  } catch {
+    return '';
+  }
 }
 
 /** Parse an .ipynb file into cells, keeping any outputs it can render. */

@@ -202,6 +202,13 @@ an identifier, never total a date), so an untouched card is still one click to a
 sensible step. With several files loaded, the table itself is a param — one
 recipe list covers every table instead of only the first.
 
+Sorting belongs to the same idea. Clicking a result's column header sorts it —
+ascending, descending, then back to the file's own order — with blanks pinned
+last in both directions, because a missing figure is not a small one, and ties
+broken by original position so the order is stable. It lives in the shared grid
+behind an opt-in flag (`sortable`) for the same reason as the formatting: a
+conversion preview should show the file as it is.
+
 Two display decisions belong with it. Figures in a result grid are digit-grouped
 and right-aligned with `tabular-nums`, in the *viewer's* locale — an Indian
 machine gets `16,43,552` without us guessing — because a column of finance
@@ -211,6 +218,13 @@ stored, and it is display-only: exports carry raw values. Note that enabling it
 also changed how wide the column must be — tabular digits are wider than the
 grid's proportional average, so `fitWidth` measures formatted numbers at their
 own rate, or the grouping truncates the very figures it was added to clarify.
+
+Finally, an empty result. `_xt_to_table` now treats an empty list, tuple or dict
+as a table with no rows rather than letting it fall through to `repr`, so a
+filter that matched nothing renders as *"No rows — the step ran without error"*
+instead of `[]`. For a reconciliation, nothing found is frequently the answer;
+it should not look like a failure. The pandas path already carried the column
+names in that case, so they are shown.
 
 ## Open risks carried into later phases
 

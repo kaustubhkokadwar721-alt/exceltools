@@ -7,7 +7,7 @@ PWA. Built for accountants and finance teams, not engineers.
 
 > **Status:** Phases 0–4 complete; Phase 5 hardening mostly done (tests, CI,
 > security, performance, fidelity — only the real-PC pilot remains). Nine tools
-> live, plus native Excel Table import. 95 unit + 34 E2E tests in CI.
+> live, plus native Excel Table import. 100 unit + 38 E2E tests in CI.
 > See [`docs/`](docs/).
 
 ## Live app
@@ -84,6 +84,19 @@ accountant can actually use it.
   carry **Save image**. **Export** puts *every* table result into one workbook,
   a sheet per step — the thing you actually hand over. A result you can see but
   can't take anywhere gets retyped, and retyping is where errors come from.
+- **Sort a result by clicking its header** — ascending, descending, then back
+  to the original order. Blanks sink to the bottom either way, because missing
+  data is not the smallest value.
+- **An empty result says so.** A filter that matches nothing shows *"No rows.
+  The step ran without error — nothing matched"*, not a bare grid that looks
+  broken. For a reconciliation, nothing is often the answer you wanted.
+- **Name the analysis.** The name rides inside the `.ipynb` and names every
+  file it produces, so *Q1 GST reconciliation.ipynb* beats `notebook.ipynb`
+  when someone opens the folder in six months.
+- **Recovery knows what it needs.** A restored draft remembers the tables its
+  code refers to, tells you so on the staging screen, and pre-fills those names
+  when you re-add the files — so the restored steps run instead of failing on a
+  table that got named differently.
 - **Figures read like figures.** Numeric columns in a result are grouped and
   right-aligned in your own locale (`16,43,552` on an Indian machine,
   `1,643,552` on a US one), with tabular digits so a column can be read down
@@ -155,10 +168,10 @@ Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
 
 ## Quality
 
-- **95 unit tests** (Vitest) over the pure modules — transform, validation, zip,
+- **100 unit tests** (Vitest) over the pure modules — transform, validation, zip,
   tables, source, plus the notebook's `.ipynb` round-trip (results included),
   error translation, recipe generation, draft storage and syntax highlighting —
-  and **34 E2E tests** (Playwright): one per tool, Excel-Table import, staged
+  and **38 E2E tests** (Playwright): one per tool, Excel-Table import, staged
   rename + schema, a **no-external-requests privacy guard**, and the notebook's
   save/reopen, recovery, recipes and plain-English errors.
 - CI (`.github/workflows/test.yml`) runs typecheck + unit + E2E on every PR and
@@ -175,8 +188,8 @@ npm install
 npm run dev        # dev server
 npm run build      # → dist/ (static, self-contained)
 npm run preview    # serve dist/ locally; test PWA + offline in DevTools
-npm run test       # 95 unit tests (Vitest)
-npm run test:e2e   # 34 E2E tests (Playwright, against the production build)
+npm run test       # 100 unit tests (Vitest)
+npm run test:e2e   # 38 E2E tests (Playwright, against the production build)
 npm run package    # → exceltools-offline.zip (offline distributable)
 npm run typecheck
 ```

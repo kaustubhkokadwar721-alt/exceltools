@@ -18,6 +18,8 @@ export interface NotebookDraft {
   cells: NotebookCell[];
   /** Names of the tables that were registered, to explain what must be re-added. */
   tables: string[];
+  /** What the user called this piece of work, if anything. */
+  title?: string;
   savedAt: number;
 }
 
@@ -63,7 +65,7 @@ export function setDraftEnabled(on: boolean): void {
 }
 
 /** Persist the notebook locally. Silently gives up if storage is unavailable. */
-export function saveDraft(cells: NotebookCell[], tables: string[]): void {
+export function saveDraft(cells: NotebookCell[], tables: string[], title = ''): void {
   if (!isDraftEnabled()) return;
   // An empty notebook writes nothing and — importantly — deletes nothing. A
   // freshly mounted tool is empty by definition, so clearing here would let a
@@ -72,7 +74,7 @@ export function saveDraft(cells: NotebookCell[], tables: string[]): void {
   if (cells.every((c) => !c.source.trim())) return;
   for (let level = 1; level <= 3; level++) {
     try {
-      const draft: NotebookDraft = { cells: trim(cells, level), tables, savedAt: Date.now() };
+      const draft: NotebookDraft = { cells: trim(cells, level), tables, title, savedAt: Date.now() };
       localStorage.setItem(KEY, JSON.stringify(draft));
       return;
     } catch {
@@ -89,7 +91,7 @@ export function loadDraft(): NotebookDraft | null {
     const draft = JSON.parse(raw) as NotebookDraft;
     if (!Array.isArray(draft.cells) || !draft.cells.length) return null;
     if (draft.cells.every((c) => !c.source?.trim())) return null;
-    return { cells: draft.cells, tables: draft.tables ?? [], savedAt: draft.savedAt ?? 0 };
+    return { cells: draft.cells, tables: draft.tables ?? [], title: draft.title ?? '', savedAt: draft.savedAt ?? 0 };
   } catch {
     return null;
   }

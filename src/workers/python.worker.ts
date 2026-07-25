@@ -60,6 +60,10 @@ def _xt_to_table(r):
     # Plain Python shapes that are really tables. Without this, a result like
     # [{"Dept": "Fin", "Total": 1650}, ...] prints as one long line of repr —
     # unreadable, and impossible to export to a spreadsheet.
+    # An empty result is still a table — one with no rows. Printing "[]" reads
+    # as a failure; "No rows" reads as the answer, which it often is.
+    if isinstance(r, (list, tuple, dict)) and not r:
+        return {"type": "table", "headers": [], "rows": []}
     if isinstance(r, (list, tuple)) and r:
         if all(isinstance(x, dict) for x in r):
             headers = []

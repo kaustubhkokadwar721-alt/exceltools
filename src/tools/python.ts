@@ -20,7 +20,7 @@ import { tableSetupCard, type SourceSetup } from '../ui/source-setup';
 import { parseFile, serializeWorkbook } from '../core/parser';
 import { resolveSource } from '../core/source';
 import { downloadBlob, pickFiles } from '../core/fileio';
-import { toIpynb, fromIpynb, renderMarkdown, type NotebookCell } from '../core/notebook';
+import { toIpynb, fromIpynb, titleFromIpynb, renderMarkdown, type NotebookCell } from '../core/notebook';
 import { inferColumnKind, schemaTextForAI } from '../core/schema';
 import { explainPythonError } from '../core/pyerrors';
 import { snippetsFor, columnChoices, defaultValues, type Snippet } from '../core/snippets';
@@ -67,6 +67,9 @@ const state = {
   engine: null as EngineInfo | null,
   starting: false,
   cells: [] as UICell[],
+  title: '',
+  /** Table names a restored draft was written against, so staging can match. */
+  expectedTables: [] as string[],
   cellSeq: 1,
   execSeq: 1,
   rail: 'tables' as 'tables' | 'variables',
@@ -91,6 +94,8 @@ export function mountPython(host: HTMLElement): void {
   state.starting = false;
   state.variables = [];
   state.rail = 'tables';
+  state.title = '';
+  state.expectedTables = [];
   state.cells = [newCell('code')];
 
   host.innerHTML = `
@@ -174,11 +179,15 @@ function renderSetup(): void {
   host.innerHTML = '';
   if (!state.pendingTables.length && !state.pendingSheets.length) return;
 
-  const sheetRows = state.pendingSheets.map((p) => {
+  // A restored notebook expects its tables by name; offer those names in order
+  // so re-adding the files takes one click rather than careful retyping.
+  const wanted = state.expectedTables.filter((t) => !state.registered.some((r) => r.name === t));
+
+  const sheetRows = state.pendingSheets.map((p, i) => {
     const include = el('input', { type: 'checkbox' }) as HTMLInputElement;
     include.checked = true;
     const name = el('input', { class: 'field-input col-name' }) as HTMLInputElement;
-    name.value = p.defaultName.replace(/\.[^.]+$/, '');
+    name.value = wanted[i] ?? p.defaultName.replace(/\.[^.]+$/, '');
     const row = el('div', { class: 'col-row sheet-stage-row' }, [
       el('label', { class: 'checkbox' }, [include, el('span', { class: 'col-src' }, [p.source + (p.sheet.name !== p.source ? ` › ${p.sheet.name}` : '')])]),
       name,
@@ -229,6 +238,13 @@ function renderSetup(): void {
   const children: (Node | string)[] = [
     el('div', { class: 'file-list-head' }, ['Choose tables to register — untick to skip, rename as needed']),
   ];
+  if (wanted.length) {
+    children.push(
+      el('div', { class: 'stage-expects' }, [
+        `Your restored notebook uses ${wanted.length === 1 ? 'a table called' : 'tables called'} ${wanted.join(', ')} — keep ${wanted.length === 1 ? 'that name' : 'those names'} and its steps will run as they did.`,
+      ]),
+    );
+  }
   if (sheetRows.length) {
     children.push(
       el('div', { class: 'source-card' }, [
@@ -443,6 +459,20 @@ function renderToolbar(): void {
     el('span', {}, ['Keep a draft in this browser']),
   ]);
 
+  // A filed working paper needs a name. It rides in the .ipynb and names the
+  // files you export, so "which analysis was this?" has an answer later.
+  const titleInput = el('input', {
+    class: 'nb-title',
+    placeholder: 'Name this analysis',
+    'aria-label': 'Notebook name',
+    maxlength: '80',
+  }) as HTMLInputElement;
+  titleInput.value = state.title;
+  titleInput.addEventListener('input', () => {
+    state.title = titleInput.value;
+    scheduleSave();
+  });
+
   const keys = el('details', { class: 'nb-keys' }, [
     el('summary', {}, ['Keyboard shortcuts']),
     el('div', { class: 'nb-keys-grid' }, [
@@ -458,6 +488,7 @@ function renderToolbar(): void {
   ]);
 
   host.append(
+    el('div', { class: 'nb-titlebar' }, [titleInput]),
     toolbar,
     el('div', { class: 'nb-toolbar-foot' }, [
       keys,
@@ -784,8 +815,17 @@ function refreshOutput(cell: UICell): void {
     if (o.type === 'table') {
       const rows = o.rows.slice(0, PREVIEW_ROWS);
       const sheet = { name: 'Result', headers: o.headers, rows: o.rows, totalRows: o.rows.length };
-      const grid = createDataGrid({ name: 'Result', headers: o.headers, rows, totalRows: o.rows.length }, { formatNumbers: true });
-      const body = el('div', {}, [grid]);
+      // An empty grid looks broken. Say plainly that the step worked and found
+      // nothing — for a reconciliation that is often the answer you wanted.
+      const body = o.rows.length
+        ? el('div', {}, [createDataGrid({ name: 'Result', headers: o.headers, rows, totalRows: o.rows.length }, { formatNumbers: true, sortable: true })])
+        : el('div', { class: 'out-empty' }, [
+            el('strong', {}, ['No rows.']),
+            el('span', {}, [
+              ' The step ran without error — nothing matched.' +
+                (o.headers.length ? ` The columns would have been: ${o.headers.join(', ')}.` : ''),
+            ]),
+          ]);
       if (o.rows.length > PREVIEW_ROWS) {
         body.append(el('div', { class: 'sheet-meta' }, [
           `showing the first ${PREVIEW_ROWS.toLocaleString()} rows — an export contains all ${o.rows.length.toLocaleString()}`,
@@ -1161,15 +1201,17 @@ function asNotebookCells(): NotebookCell[] {
   }));
 }
 
-/** A filename someone can find again: the data it came from, plus the date. */
+/** A filename someone can find again: what you called it, or the data + date. */
 function baseFileName(): string {
+  const named = state.title.trim().replace(/[^A-Za-z0-9 _-]+/g, '').trim().replace(/\s+/g, '-');
+  if (named) return named.slice(0, 60);
   const stamp = new Date().toISOString().slice(0, 10);
   const source = state.registered[0]?.name;
   return `${source ? source.slice(0, 40) : 'notebook'}-${stamp}`;
 }
 
 function saveIpynb(): void {
-  const blob = new Blob([toIpynb(asNotebookCells())], { type: 'application/x-ipynb+json' });
+  const blob = new Blob([toIpynb(asNotebookCells(), state.title)], { type: 'application/x-ipynb+json' });
   downloadBlob(blob, `${baseFileName()}.ipynb`);
   toast('Saved — with your results and charts. The file opens in real Jupyter too.', 'success', 5000);
 }
@@ -1217,6 +1259,8 @@ async function openIpynb(): Promise<void> {
       toast('That notebook has no cells in it.', 'warning', 5000);
       return;
     }
+    state.title = titleFromIpynb(text) || files[0].name.replace(/\.ipynb$/i, '');
+    renderToolbar();
     loadCells(loaded);
     toast(`Opened "${files[0].name}" — ${loaded.length} cell(s), results included.`, 'success', 5000);
   } catch (e) {
@@ -1233,12 +1277,16 @@ function loadCells(cells: NotebookCell[]): void {
 
 function flushSave(): void {
   clearTimeout(state.saveTimer);
-  if (state.root?.isConnected) saveDraft(asNotebookCells(), state.registered.map((r) => r.name));
+  if (state.root?.isConnected) saveDraftNow();
 }
 
 function scheduleSave(): void {
   clearTimeout(state.saveTimer);
   state.saveTimer = setTimeout(flushSave, AUTOSAVE_MS);
+}
+
+function saveDraftNow(): void {
+  saveDraft(asNotebookCells(), state.registered.map((r) => r.name), state.title);
 }
 
 let flushAttached = false;
@@ -1266,9 +1314,20 @@ function offerRestore(): void {
       ]),
       el('div', { class: 'nb-restore-acts' }, [
         button('Restore it', () => {
+          state.title = draft.title ?? '';
+          // The code refers to tables by name, so staging can pre-fill them and
+          // the restored steps run instead of failing on a renamed table.
+          state.expectedTables = draft.tables;
+          renderToolbar();
           loadCells(draft.cells);
           host.innerHTML = '';
-          toast('Restored. Re-register your files, then use Run all.', 'success', 6000);
+          toast(
+            draft.tables.length
+              ? `Restored. Add the file(s) again — the names ${draft.tables.join(', ')} are filled in for you — then use Run all.`
+              : 'Restored.',
+            'success',
+            8000,
+          );
         }),
         button('Discard', () => {
           clearDraft();

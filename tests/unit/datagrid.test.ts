@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupDigits } from '../../src/ui/datagrid';
+import { compareValues, groupDigits } from '../../src/ui/datagrid';
 
 describe('groupDigits', () => {
   it('groups the integer part in the viewer\'s own locale', () => {
@@ -24,5 +24,28 @@ describe('groupDigits', () => {
     expect(groupDigits(1e21)).toBe(String(1e21)); // exponent form
     expect(groupDigits(NaN)).toBe('NaN');
     expect(groupDigits(Infinity)).toBe('Infinity');
+  });
+});
+
+describe('compareValues', () => {
+  const sorted = <T>(xs: T[]) => [...xs].sort((a, b) => compareValues(a as never, b as never));
+
+  it('orders numbers by value, not as text', () => {
+    expect(sorted([1000, 9, 250])).toEqual([9, 250, 1000]);
+    expect(sorted([-5, 0, 3.5])).toEqual([-5, 0, 3.5]);
+  });
+
+  it('orders text the way a person reads it, including embedded numbers', () => {
+    expect(sorted(['Item 10', 'Item 2'])).toEqual(['Item 2', 'Item 10']);
+    expect(sorted(['delta', 'Alpha'])).toEqual(['Alpha', 'delta']); // case-insensitive
+  });
+
+  it('orders booleans false before true', () => {
+    expect(sorted([true, false, true])).toEqual([false, true, true]);
+  });
+
+  it('compares mixed types as text rather than throwing', () => {
+    expect(() => compareValues(5, 'five')).not.toThrow();
+    expect(compareValues(5, 5)).toBe(0);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toIpynb, fromIpynb, renderMarkdown, type NotebookCell } from '../../src/core/notebook';
+import { toIpynb, fromIpynb, titleFromIpynb, renderMarkdown, type NotebookCell } from '../../src/core/notebook';
 
 describe('ipynb round-trip', () => {
   it('serializes code + markdown cells and reads them back', () => {
@@ -121,6 +121,18 @@ describe('ipynb round-trip', () => {
       cells: [{ cell_type: 'code', source: ['x'], metadata: { collapsed: true, jupyter: { source_hidden: true } } }],
     });
     expect(fromIpynb(foreign)[0]).toMatchObject({ sourceHidden: true, outputsHidden: true });
+  });
+
+  it('carries the notebook\'s name, and survives a file that has none', () => {
+    const json = toIpynb([{ kind: 'code', source: 'x' }], '  Q1 GST reconciliation  ');
+    expect(JSON.parse(json).metadata.exceltools.title).toBe('Q1 GST reconciliation');
+    expect(titleFromIpynb(json)).toBe('Q1 GST reconciliation');
+
+    // No name given, and a foreign notebook that never had one.
+    expect(JSON.parse(toIpynb([{ kind: 'code', source: 'x' }])).metadata.exceltools).toBeUndefined();
+    expect(titleFromIpynb(toIpynb([{ kind: 'code', source: 'x' }], '   '))).toBe('');
+    expect(titleFromIpynb('{"nbformat":4,"cells":[]}')).toBe('');
+    expect(titleFromIpynb('not json')).toBe('');
   });
 
   it('rejects non-notebook JSON', () => {

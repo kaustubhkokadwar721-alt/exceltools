@@ -28,6 +28,23 @@ export interface DataGridOptions {
    * result grids turn it on. Display only — exports use the raw values.
    */
   formatNumbers?: boolean;
+  /**
+   * Click a column header to sort, click again to reverse, a third time to go
+   * back to the original order. Everyone who has used a spreadsheet expects
+   * this of a table of results. Display only, and off by default so a
+   * conversion preview keeps showing the file in its own order.
+   */
+  sortable?: boolean;
+}
+
+const isBlank = (v: CellValue): boolean => v === null || v === undefined || v === '';
+
+/** Spreadsheet-ish ordering: numbers numerically, text naturally, blanks last. */
+export function compareValues(a: CellValue, b: CellValue): number {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  if (typeof a === 'boolean' && typeof b === 'boolean') return Number(a) - Number(b);
+  // `numeric` keeps "Item 2" before "Item 10", which is what people expect.
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
 }
 
 export function createDataGrid(sheet: SheetData, opts: DataGridOptions = {}): HTMLElement {
@@ -76,17 +93,33 @@ export function createDataGrid(sheet: SheetData, opts: DataGridOptions = {}): HT
   const remember = () => savedWidths.set(sig, [...widths]);
   const template = () => `48px ${widths.map((w) => `${w}px`).join(' ')}`;
 
+  // Sort order as a list of indices into sheet.rows; null means "as loaded".
+  let order: number[] | null = null;
+  let sortCol = -1;
+  let sortDir: 1 | -1 = 1;
+  const rowAt = (i: number): CellValue[] => sheet.rows[order ? order[i] : i];
+
   // Header (sticky, outside the scroll virtualization) with resize handles.
   const header = document.createElement('div');
   header.className = 'grid-header';
-  header.innerHTML =
-    `<div class="grid-cell grid-rownum">#</div>` +
-    sheet.headers
-      .map(
-        (h, i) =>
-          `<div class="grid-cell" title="${escapeHtml(h)}">${escapeHtml(h)}<span class="grid-resize" data-col="${i}" title="Drag to resize · double-click to fit"><span class="grid-resize-bar"></span></span></div>`,
-      )
-      .join('');
+  const paintHeader = () => {
+    header.innerHTML =
+      `<div class="grid-cell grid-rownum">#</div>` +
+      sheet.headers
+        .map((h, i) => {
+          const active = opts.sortable && sortCol === i;
+          const arrow = active ? `<span class="grid-sort" aria-hidden="true">${sortDir === 1 ? '▲' : '▼'}</span>` : '';
+          const hint = opts.sortable ? ' · click to sort' : '';
+          const aria = active ? ` aria-sort="${sortDir === 1 ? 'ascending' : 'descending'}"` : '';
+          return (
+            `<div class="grid-cell${opts.sortable ? ' is-sortable' : ''}${active ? ' is-sorted' : ''}" data-col="${i}"` +
+            ` title="${escapeHtml(h)}${hint}"${aria}>${escapeHtml(h)}${arrow}` +
+            `<span class="grid-resize" data-col="${i}" title="Drag to resize · double-click to fit"><span class="grid-resize-bar"></span></span></div>`
+          );
+        })
+        .join('');
+  };
+  paintHeader();
   container.appendChild(header);
 
   // Scroll viewport
@@ -122,7 +155,7 @@ export function createDataGrid(sheet: SheetData, opts: DataGridOptions = {}): HT
       html +=
         `<div class="grid-row" style="top:${i * ROW_HEIGHT}px;grid-template-columns:${t}">` +
         `<div class="grid-cell grid-rownum">${i + 1}</div>` +
-        sheet.rows[i]
+        rowAt(i)
           .map((c, ci) => `<div class="grid-cell${isNumeric(ci) ? ' grid-num' : ''}">${fmt(c, isNumeric(ci))}</div>`)
           .join('') +
         `</div>`;
@@ -139,6 +172,47 @@ export function createDataGrid(sheet: SheetData, opts: DataGridOptions = {}): HT
     },
     { passive: true },
   );
+
+  // Click a header to sort: ascending → descending → back to the original
+  // order. Clicks on the resize handle are the other gesture and never sort.
+  if (opts.sortable) {
+    header.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('.grid-resize')) return;
+      const cell = target.closest<HTMLElement>('.grid-cell[data-col]');
+      if (!cell) return;
+      const col = Number(cell.dataset.col);
+
+      if (sortCol !== col) {
+        sortCol = col;
+        sortDir = 1;
+      } else if (sortDir === 1) {
+        sortDir = -1;
+      } else {
+        sortCol = -1;
+      }
+
+      if (sortCol === -1) {
+        order = null;
+      } else {
+        order = sheet.rows.map((_, i) => i).sort((ia, ib) => {
+          const a = sheet.rows[ia][col];
+          const b = sheet.rows[ib][col];
+          const aBlank = isBlank(a);
+          const bBlank = isBlank(b);
+          // Blanks sink to the bottom whichever way the column is sorted —
+          // they are missing data, not the smallest value.
+          if (aBlank || bBlank) return aBlank && bBlank ? ia - ib : aBlank ? 1 : -1;
+          const c = compareValues(a, b);
+          return c !== 0 ? c * sortDir : ia - ib; // stable: ties keep file order
+        });
+      }
+      paintHeader();
+      applyTemplate();
+      viewport.scrollTop = 0;
+      render();
+    });
+  }
 
   // Drag-to-resize + double-click autofit on header handles.
   header.addEventListener('pointerdown', (e) => {

@@ -227,6 +227,11 @@ a { color: inherit; text-decoration: none; }
 /* Figures line up on the right and share one width per digit, so a column of
    numbers can be read down — and a stray order of magnitude stands out. */
 .grid-num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Sortable headers: everyone who has used a spreadsheet tries this first. */
+.grid-header .is-sortable { cursor: pointer; user-select: none; }
+.grid-header .is-sortable:hover { color: var(--rgy-green); }
+.grid-header .is-sorted { color: var(--rgy-green); }
+.grid-sort { margin-left: 5px; font-size: 10px; }
 
 /* ---- Summary pills (Compare / Clean / Dedupe) ---- */
 .diff-summary { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 8px; align-items: center; }
@@ -296,6 +301,17 @@ a { color: inherit; text-decoration: none; }
 .nb-toolbar .btn, .nb-toolbar .btn-ghost { min-height: 34px; padding: 6px 14px; }
 .nb-toolbar .btn-ghost[disabled] { opacity: .45; cursor: default; }
 .nb-badge { margin-left: auto; font: 500 13px var(--rgy-font-mono); color: var(--rgy-ink-faint); }
+/* Name the piece of work: it rides in the .ipynb and names the exports. */
+.nb-titlebar { margin: 14px 0 0; }
+.nb-title { width: 100%; max-width: 460px; padding: 4px 2px; border: 0; border-bottom: 1px dashed var(--rgy-input); background: none; font: 500 20px var(--rgy-font-display); color: var(--rgy-ink); }
+.nb-title:hover { border-bottom-color: var(--rgy-ink-faint); }
+.nb-title:focus { outline: none; border-bottom-style: solid; border-bottom-color: var(--rgy-green); }
+.nb-title::placeholder { color: var(--rgy-ink-faint); font-style: italic; }
+
+.stage-expects { margin: 8px 0 2px; padding: 8px 12px; border-left: 3px solid var(--rgy-gold); border-radius: var(--rgy-radius-sm); background: color-mix(in srgb, var(--rgy-gold) 8%, var(--rgy-panel)); font-size: 14px; color: var(--rgy-ink); }
+
+.out-empty { padding: 10px 12px; border-radius: var(--rgy-radius-sm); background: var(--rgy-panel-subtle); font-size: 14.5px; color: var(--rgy-ink-soft); }
+
 .nb-tb-div { width: 1px; align-self: stretch; margin: 2px 4px; background: var(--rgy-rule); }
 /* The file group sits to the right, so if the row wraps it reads as a group
    rather than as two buttons that fell off the end. */

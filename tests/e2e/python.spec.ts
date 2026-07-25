@@ -167,6 +167,81 @@ test('notebook: a plain list of dicts is shown as a table, with figures aligned'
   await expect(page.locator('.out-table .out-label-meta')).toContainText('2 rows × 2 columns');
 });
 
+test('notebook: a result grid sorts on a column click, and back again', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await setCell(
+    page,
+    0,
+    '[{"Dept": "Ops", "Total": 300}, {"Dept": "Fin", "Total": 1000}, {"Dept": "IT", "Total": None}, {"Dept": "Adm", "Total": 90}]',
+  );
+  await runCell(page, 0);
+  await page.waitForSelector('.out-table .grid-row', { timeout: 90_000 });
+
+  const totals = async () => (await gridRows(page, '.out-table')).map((r) => r[1]);
+  expect(await totals()).toEqual(['Ops', 'Fin', 'IT', 'Adm']); // as produced
+
+  const totalHeader = page.locator('.out-table .grid-header .grid-cell', { hasText: 'TOTAL' });
+  await totalHeader.click(); // ascending — blanks sink to the bottom
+  expect(await totals()).toEqual(['Adm', 'Ops', 'Fin', 'IT']);
+
+  await totalHeader.click(); // descending — blanks still last
+  expect(await totals()).toEqual(['Fin', 'Ops', 'Adm', 'IT']);
+
+  await totalHeader.click(); // third click restores the original order
+  expect(await totals()).toEqual(['Ops', 'Fin', 'IT', 'Adm']);
+});
+
+test('notebook: an empty result says so instead of showing a bare grid', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await setCell(page, 0, '[r for r in tables["payroll"] if r["Dept"] == "Nowhere"]');
+  await runCell(page, 0);
+  await expect(page.locator('.out-empty')).toContainText('No rows', { timeout: 90_000 });
+  await expect(page.locator('.out-empty')).toContainText('nothing matched');
+});
+
+test('notebook: naming the analysis names the files it produces', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await page.locator('.nb-title').fill('Q1 GST reconciliation');
+  await setCell(page, 0, 'print("done")');
+  await runCell(page, 0);
+  await expect(page.locator('.nb-stdout')).toContainText('done', { timeout: 90_000 });
+
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.nb-toolbar button:has-text("Save")')]);
+  expect(await dl.suggestedFilename()).toBe('Q1-GST-reconciliation.ipynb');
+
+  // The name travels in the file and comes back when it is reopened.
+  const nb = JSON.parse((await readFile((await dl.path())!)).toString('utf8'));
+  expect(nb.metadata.exceltools.title).toBe('Q1 GST reconciliation');
+});
+
+test('notebook: a restored draft says which tables it needs and fills the name in', async ({ page }) => {
+  await page.goto('/#/tool/python');
+  await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);
+  await page.waitForSelector('.sheet-stage-row input.col-name', { timeout: 60_000 });
+  await page.fill('.sheet-stage-row input.col-name', 'payroll');
+  await page.click('button:has-text("Register")');
+  await page.waitForSelector('.schema-block', { timeout: 150_000 });
+  await setCell(page, 0, 'len(tables["payroll"])');
+  await page.waitForFunction(() => {
+    const raw = localStorage.getItem('exceltools.notebook.draft.v1');
+    return !!raw && raw.includes('payroll');
+  });
+
+  // Come back cold, restore, and add the file again.
+  await gotoTool(page, 'convert');
+  await gotoTool(page, 'python');
+  await page.locator('.nb-restore button:has-text("Restore it")').click();
+  await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);
+  await page.waitForSelector('.sheet-stage-row input.col-name', { timeout: 60_000 });
+
+  await expect(page.locator('.stage-expects')).toContainText('payroll');
+  // Pre-filled, so the restored code refers to a table that actually exists.
+  await expect(page.locator('.sheet-stage-row input.col-name')).toHaveValue('payroll');
+});
+
 test('notebook: a deleted cell can be brought back', async ({ page }) => {
   await page.goto('/#/tool/python');
   await setCell(page, 0, 'careful = "hours of work"');
