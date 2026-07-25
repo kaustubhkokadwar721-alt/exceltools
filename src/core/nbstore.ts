@@ -65,11 +65,11 @@ export function setDraftEnabled(on: boolean): void {
 /** Persist the notebook locally. Silently gives up if storage is unavailable. */
 export function saveDraft(cells: NotebookCell[], tables: string[]): void {
   if (!isDraftEnabled()) return;
-  const isEmpty = cells.every((c) => !c.source.trim());
-  if (isEmpty) {
-    clearDraft();
-    return;
-  }
+  // An empty notebook writes nothing and — importantly — deletes nothing. A
+  // freshly mounted tool is empty by definition, so clearing here would let a
+  // tab switch destroy the very draft the user was about to be offered.
+  // Deleting a draft is only ever an explicit choice: Discard, or the toggle.
+  if (cells.every((c) => !c.source.trim())) return;
   for (let level = 1; level <= 3; level++) {
     try {
       const draft: NotebookDraft = { cells: trim(cells, level), tables, savedAt: Date.now() };

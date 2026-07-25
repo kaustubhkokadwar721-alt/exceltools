@@ -28,6 +28,19 @@ async function setCell(page: Page, idx: number, code: string): Promise<void> {
   await page.locator('.ce-input').nth(idx).fill(code);
 }
 
+/**
+ * Switch tools the way a user does — through the hash router, in the same
+ * document. `page.goto` on a hash URL can be serviced as a full document load,
+ * which races the SPA: a click can land on a page that is about to be replaced.
+ * Waiting for the destination's own UI makes the remount the assertion.
+ */
+async function gotoTool(page: Page, id: 'python' | 'convert'): Promise<void> {
+  await page.evaluate((tool) => {
+    location.hash = `#/tool/${tool}`;
+  }, id);
+  await page.waitForSelector(id === 'python' ? '.nb-toolbar' : '.dropzone', { state: 'visible' });
+}
+
 const runCell = (page: Page, idx: number) => page.locator('.nb-cell').nth(idx).locator('.nb-run').click();
 
 test('notebook: cells share state, stdout + repr + table outputs render', async ({ page }) => {
@@ -117,8 +130,8 @@ test('notebook: save and reopen keeps the results, not just the code', async ({ 
   expect(nb.cells[0].outputs.map((o: { output_type: string }) => o.output_type)).toEqual(['stream', 'execute_result']);
 
   // Reload the tool so nothing is left in memory, then open the file back up.
-  await page.goto('/#/tool/convert');
-  await page.goto('/#/tool/python');
+  await gotoTool(page, 'convert');
+  await gotoTool(page, 'python');
   const restore = page.locator('.nb-restore button:has-text("Discard")');
   if (await restore.count()) await restore.click();
 
@@ -148,8 +161,8 @@ test('notebook: a saved table result reopens as a grid, and as HTML in Jupyter',
   // The saved file carries a real HTML table, so it is readable in Jupyter too.
   expect(JSON.stringify(nb.cells[0].outputs)).toContain('text/html');
 
-  await page.goto('/#/tool/convert');
-  await page.goto('/#/tool/python');
+  await gotoTool(page, 'convert');
+  await gotoTool(page, 'python');
   const restore = page.locator('.nb-restore button:has-text("Discard")');
   if (await restore.count()) await restore.click();
 
@@ -204,8 +217,8 @@ test('notebook: unsaved work is offered back after the tab is closed', async ({ 
   await setCell(page, 0, 'kept = "recover me"');
   // Autosave is debounced — wait for the write itself, not for a wall clock.
   await page.waitForFunction(() => !!localStorage.getItem('exceltools.notebook.draft.v1'));
-  await page.goto('/#/tool/convert');
-  await page.goto('/#/tool/python');
+  await gotoTool(page, 'convert');
+  await gotoTool(page, 'python');
 
   await expect(page.locator('.nb-restore')).toContainText('unsaved work');
   await page.locator('.nb-restore button:has-text("Restore it")').click();
@@ -222,8 +235,8 @@ test('notebook: drafts can be switched off, which deletes the stored one', async
 
   // Still off after a revisit, and nothing new is written.
   await setCell(page, 0, 'more = "typing"');
-  await page.goto('/#/tool/convert');
-  await page.goto('/#/tool/python');
+  await gotoTool(page, 'convert');
+  await gotoTool(page, 'python');
   await expect(page.locator('.nb-restore')).toHaveCount(0);
   await expect(page.locator('.nb-draft input')).not.toBeChecked();
   expect(await page.evaluate(() => localStorage.getItem('exceltools.notebook.draft.v1'))).toBeNull();

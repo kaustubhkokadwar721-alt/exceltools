@@ -77,6 +77,14 @@ describe('notebook draft storage', () => {
     expect(loadDraft()).toBeNull();
   });
 
+  it('never lets an empty notebook delete a stored draft', () => {
+    // A freshly mounted tool is empty. If that overwrote or cleared the draft,
+    // switching tabs before selecting Restore would destroy the work.
+    saveDraft(cells, ['gl']);
+    saveDraft([{ kind: 'code', source: '' }], []);
+    expect(loadDraft()!.cells.map((c) => c.source)).toEqual(['# Month end', 'df_gl.head()']);
+  });
+
   it('clears on request and survives unreadable storage', () => {
     saveDraft(cells, []);
     clearDraft();
