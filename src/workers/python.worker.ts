@@ -8,7 +8,8 @@ import type { CellValue } from '../core/types';
 interface InitMsg { kind: 'init'; indexURL: string }
 interface RegisterMsg { kind: 'register'; name: string; headers: string[]; rows: CellValue[][] }
 interface RunCellMsg { kind: 'runCell'; id: number; code: string }
-type InMsg = InitMsg | RegisterMsg | RunCellMsg;
+interface VarsMsg { kind: 'vars' }
+type InMsg = InitMsg | RegisterMsg | RunCellMsg | VarsMsg;
 
 export type CellOut =
   | { type: 'table'; headers: string[]; rows: CellValue[][] }
@@ -82,13 +83,50 @@ def _xt_run_cell(code):
             else:
                 outputs.append({"type": "text", "text": repr(value)})
         return json.dumps({"ok": True, "outputs": outputs})
-    except Exception:
+    except BaseException as exc:
         tb = traceback.format_exc()
         # Trim runner frames: keep from the <cell> frame onward when present.
         lines = tb.splitlines()
         idx = next((i for i, l in enumerate(lines) if '"<cell>"' in l or "<cell>" in l), 1)
         trimmed = "\\n".join([lines[0]] + lines[idx:])
-        return json.dumps({"ok": False, "error": trimmed, "outputs": _xt_figures()})
+        return json.dumps({
+            "ok": False,
+            "error": trimmed,
+            "etype": type(exc).__name__,
+            "evalue": str(exc),
+            "outputs": _xt_figures(),
+        })
+
+def _xt_vars():
+    """Everything the user created, for the variable inspector."""
+    try:
+        import pandas as pd
+    except ImportError:
+        pd = None
+    out = []
+    for k, v in list(_g.items()):
+        if k.startswith("_") or k == "tables":
+            continue
+        if callable(v) or type(v).__name__ == "module":
+            continue
+        if pd is not None and isinstance(v, pd.DataFrame):
+            out.append({
+                "name": k,
+                "type": "table",
+                "detail": "{:,} rows x {} columns".format(len(v), len(v.columns)),
+                "columns": [str(c) for c in v.columns][:80],
+            })
+            continue
+        if pd is not None and isinstance(v, pd.Series):
+            out.append({"name": k, "type": "column", "detail": "{:,} values".format(len(v))})
+            continue
+        t = type(v).__name__
+        try:
+            detail = "{:,} items".format(len(v)) if t in ("list", "dict", "tuple", "set") else repr(v)
+        except Exception:
+            detail = t
+        out.append({"name": k, "type": t, "detail": detail[:120]})
+    return json.dumps(sorted(out, key=lambda d: d["name"]))
 `;
 
 self.onmessage = async (ev: MessageEvent<InMsg>) => {
@@ -131,21 +169,28 @@ self.onmessage = async (ev: MessageEvent<InMsg>) => {
       py.globals.set('_xt_code', msg.code);
       const started = performance.now();
       const raw = py.runPython('_xt_run_cell(_xt_code)') as string;
-      const parsed = JSON.parse(raw) as { ok: boolean; outputs: CellOut[]; error?: string };
+      const parsed = JSON.parse(raw) as { ok: boolean; outputs: CellOut[]; error?: string; etype?: string };
       self.postMessage({
         kind: 'cellResult',
         id: msg.id,
         ok: parsed.ok,
-        stdout: stdoutBuf.join('\n'),
+        // Batched chunks already carry their newlines — joining adds blank lines.
+        stdout: stdoutBuf.join(''),
         outputs: parsed.outputs,
         error: parsed.error,
+        etype: parsed.etype,
         elapsedMs: performance.now() - started,
       });
+    } else if (msg.kind === 'vars') {
+      if (!py) throw new Error('engine not initialised');
+      self.postMessage({ kind: 'vars', vars: JSON.parse(py.runPython('_xt_vars()') as string) });
     }
   } catch (e) {
     const base = { ok: false, error: e instanceof Error ? e.message : String(e) };
     if (msg.kind === 'runCell') {
-      self.postMessage({ kind: 'cellResult', id: msg.id, stdout: stdoutBuf.join('\n'), outputs: [], ...base });
+      self.postMessage({ kind: 'cellResult', id: msg.id, stdout: stdoutBuf.join(''), outputs: [], ...base });
+    } else if (msg.kind === 'vars') {
+      self.postMessage({ kind: 'vars', vars: [] });
     } else {
       self.postMessage({ kind: 'error', ...base });
     }

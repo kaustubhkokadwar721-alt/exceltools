@@ -56,9 +56,24 @@ with the relaxation. Accepted deliberately, with these boundaries:
 
 ## Storage & caching
 
-- **No user data is persisted.** Files live only in memory for the duration of a
-  task. Nothing is written to `localStorage`, `sessionStorage`, IndexedDB, or
-  cookies.
+- **Nothing is ever uploaded.** Everything below stays inside this browser
+  profile on this machine; `connect-src 'self'` makes leaving impossible.
+- **No spreadsheet file is persisted.** Uploaded files live only in memory for
+  the duration of a task, in every tool.
+- **One exception, by design: the Python notebook draft.** So that a crashed
+  tab or a closed window doesn't destroy an hour of work, the notebook keeps a
+  copy of *itself* — cell code, notes, and printed/tabular results — under the
+  `localStorage` key `exceltools.notebook.draft.v1` (`src/core/nbstore.ts`).
+  Charts are excluded and tables are truncated to 50 rows, so it holds a
+  fragment of results rather than a dataset; it is overwritten as you type and
+  offered back on your next visit.
+  - **Turn it off** with *Keep a draft in this browser* under the notebook
+    toolbar — that deletes the stored draft immediately and stops further
+    writes. Recommended on shared or kiosk machines.
+  - **Clear it** at any time with *Discard* on the restore banner, or by
+    clearing site data in the browser.
+  - No other tool writes to `localStorage`, `sessionStorage`, IndexedDB, or
+    cookies, and nothing writes a cookie at all.
 - The service worker (Workbox, `vite.config.ts`) caches **only application assets
   and the DuckDB engine** — never user files. Precache globs match app code,
   styles, fonts and icons; `runtimeCaching` matches the DuckDB chunk/wasm only.

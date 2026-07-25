@@ -117,6 +117,48 @@ Jupyter. matplotlib and its wheel set ride the same best-effort CI staging as
 pandas (`scripts/pyodide-assets.mjs`); each capability degrades independently
 when wheels are absent.
 
+## Decision 12 — build the notebook, don't embed JupyterLite
+
+The obvious move once the notebook needed to grow up was to adopt
+**JupyterLite** — official, Pyodide/WASM, static files, no server, and it would
+satisfy the security constraint just as this app does. We rejected it for two
+reasons that only show up from the users' side.
+
+**It cannot see the workbook.** `src/core/python.ts` injects each registered
+sheet into the kernel as a named DataFrame, and the schema rail shows the
+accountant their real columns and types before they write a line. JupyterLite
+owns its own kernel behind its own virtual filesystem, so the flow becomes
+*export a file, then import it into a separate app*. That is the boundary, not
+an integration detail.
+
+**It is an IDE for data scientists.** Kernel menus, a file browser, a command
+palette, `%magics`, an extension manager and raw tracebacks all assume a user
+who knows what a kernel is. Our users are accountants; every one of those
+surfaces is a support ticket, in chrome that matches none of the other tools.
+
+Adopting it would also have meant vendoring a second SPA (its own service
+worker, routing and dependency tree) into a suite whose pitch to a firm's
+security team is that it can be audited end to end, and roughly doubling the
+offline zip that already carries Pyodide + pandas + matplotlib. It would not
+even have bought a working Stop button: reliable Pyodide interruption needs
+`SharedArrayBuffer` → cross-origin isolation → COOP/COEP headers, which neither
+GitHub Pages nor a `file://` copy can set.
+
+So the notebook is ours, and the effort went where upstream Jupyter offers
+nothing: **plain-English error translation** (`src/core/pyerrors.ts`), a
+**recipe library** that writes each step using the user's own column names
+(`src/core/snippets.ts`), **crash recovery** (`src/core/nbstore.ts`), a
+**variable inspector**, and **outputs that survive a save** — tables as
+`text/html` plus a lossless ExcelTools JSON mime, charts as `image/png`, so a
+reopened notebook shows its results without re-running, and still opens in real
+Jupyter. Stop is implemented honestly as *terminate the worker, boot a new one,
+re-register the tables*, and says so in the UI.
+
+Cells own their DOM: `src/tools/python.ts` builds each cell once and updates it
+in place, rather than re-rendering the notebook on every action. That is what
+makes typing, selection, scroll position and focus survive a run — and it was a
+prerequisite for everything above, not a polish item.
+
 ## Open risks carried into later phases
 
 1. **Deployment on locked-down PCs** — CSP overrides, `file://` WASM restrictions,

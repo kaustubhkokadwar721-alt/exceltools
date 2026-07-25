@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
@@ -14,19 +14,21 @@ const staged = (prefix: string) => existsSync(pyDir) && readdirSync(pyDir).some(
 const pandasStaged = staged('pandas-');
 const mplStaged = staged('matplotlib-');
 
-async function bootNotebook(page: import('@playwright/test').Page): Promise<void> {
+async function bootNotebook(page: Page): Promise<void> {
   await page.goto('/#/tool/python');
   await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);
   await page.waitForSelector('.sheet-stage-row input.col-name', { timeout: 60_000 });
   await page.fill('.sheet-stage-row input.col-name', 'payroll');
   await page.click('button:has-text("Register")');
-  await page.waitForSelector('.nb-cell', { timeout: 150_000 });
+  // The rail only fills once the engine is up and the table is registered.
+  await page.waitForSelector('.schema-block', { timeout: 150_000 });
 }
 
-async function setCell(page: import('@playwright/test').Page, idx: number, code: string): Promise<void> {
-  const ta = page.locator('.nb-src').nth(idx);
-  await ta.fill(code);
+async function setCell(page: Page, idx: number, code: string): Promise<void> {
+  await page.locator('.ce-input').nth(idx).fill(code);
 }
+
+const runCell = (page: Page, idx: number) => page.locator('.nb-cell').nth(idx).locator('.nb-run').click();
 
 test('notebook: cells share state, stdout + repr + table outputs render', async ({ page }) => {
   test.setTimeout(240_000);
@@ -34,60 +36,131 @@ test('notebook: cells share state, stdout + repr + table outputs render', async 
 
   // Cell 1: define state + print (stdout) — pure Python so it runs everywhere.
   await setCell(page, 0, 'total = sum(r["Amt"] for r in tables["payroll"])\nprint("computed")\ntotal');
-  await page.locator('.nb-cell').nth(0).locator('button:has-text("Run")').click();
+  await runCell(page, 0);
   await page.waitForSelector('.nb-stdout');
   await expect(page.locator('.nb-stdout').first()).toContainText('computed');
   await expect(page.locator('.nb-repr').first()).toContainText('4650'); // sum 10..300
   await expect(page.locator('.nb-count').first()).toContainText('[1]');
 
   // Cell 2 (new): uses cell 1's variable — the notebook property.
-  await page.locator('button:has-text("+ Code")').click();
+  await page.locator('button:has-text("Code")').click();
   await setCell(page, 1, 'result = [{"k": "total", "v": total * 2}]\nresult');
-  await page.locator('.nb-cell').nth(1).locator('button:has-text("Run")').click();
-  await page.waitForSelector('.nb-cell:nth-child(2) .nb-repr, .nb-out .grid', { timeout: 30_000 });
-  await expect(page.locator('.nb-cell').nth(1).locator('.nb-out')).toContainText('9300');
+  await runCell(page, 1);
+  await expect(page.locator('.nb-cell').nth(1).locator('.nb-out-host')).toContainText('9300', { timeout: 30_000 });
 });
 
-test('notebook: error shows traceback and Run all stops there', async ({ page }) => {
+test('notebook: a failed cell is explained in plain English, and Run all stops there', async ({ page }) => {
   test.setTimeout(240_000);
   await bootNotebook(page);
   await setCell(page, 0, 'raise ValueError("boom")');
-  await page.locator('button:has-text("+ Code")').click();
+  await page.locator('button:has-text("Code")').click();
   await setCell(page, 1, 'print("never")');
   await page.locator('button:has-text("Run all")').click();
-  await page.waitForSelector('.nb-tb', { timeout: 30_000 });
+
+  await page.waitForSelector('.nb-err-title', { timeout: 30_000 });
+  await expect(page.locator('.nb-err-title')).toBeVisible();
+  await expect(page.locator('.nb-stdout')).toHaveCount(0); // the second cell never ran
+
+  // The real traceback is still one click away.
+  await page.locator('.nb-err-raw > summary').click();
   await expect(page.locator('.nb-tb')).toContainText('ValueError: boom');
-  await expect(page.locator('.nb-stdout')).toHaveCount(0); // second cell never ran
 });
 
-test('notebook: save .ipynb and load it back', async ({ page }) => {
+test('notebook: a missing column names the column and suggests the right one', async ({ page }) => {
   test.setTimeout(240_000);
   await bootNotebook(page);
-  await setCell(page, 0, 'x = 41\nx + 1');
-  await page.locator('button:has-text("+ Markdown")').click();
-  await page.locator('.nb-src').nth(1).fill('# My notes');
-
-  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Save .ipynb")')]);
-  const path = await dl.path();
-  const nb = JSON.parse((await readFile(path)).toString('utf8'));
-  expect(nb.nbformat).toBe(4);
-  expect(nb.cells.map((c: { cell_type: string }) => c.cell_type)).toEqual(['code', 'markdown']);
-
-  // Load it back through the picker.
-  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('button:has-text("Open .ipynb")')]);
-  await chooser.setFiles(path);
-  await expect(page.locator('.nb-src').first()).toHaveValue('x = 41\nx + 1');
-  await expect(page.locator('.nb-md')).toContainText('My notes');
+  // Pure Python raises the same KeyError pandas would, so this holds either way.
+  await setCell(page, 0, 'tables["payroll"][0]["Amount"]');
+  await runCell(page, 0);
+  await page.waitForSelector('.nb-err-title', { timeout: 90_000 });
+  await expect(page.locator('.nb-err-title')).toContainText('no column called "Amount"');
+  await expect(page.locator('.nb-err-hint')).toContainText('Did you mean "Amt"?');
 });
 
-test('notebook: pandas DataFrame renders as a grid', async ({ page }) => {
+test('notebook: recipes insert runnable code using the real column names', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+
+  // An empty notebook offers the recipe list up front — nothing to type.
+  await page.waitForSelector('.nb-start .nb-recipe');
+
+  if (pandasStaged) {
+    // "Amt" wins over the numeric "ID" column — you total money, not row numbers.
+    await page.locator('.nb-recipe', { hasText: 'Total Amt by Dept' }).click();
+    await expect(page.locator('.ce-input').first()).toHaveValue(/groupby\("Dept", as_index=False\)\["Amt"\]/);
+    await page.waitForSelector('.nb-out-host .grid-row', { timeout: 90_000 });
+    const rows = await gridRows(page, '.nb-out-host');
+    expect(rows.map((r) => [r[1], r[2]])).toEqual([
+      ['Fin', '1650'],
+      ['IT', '1550'],
+      ['Ops', '1450'],
+    ]);
+  } else {
+    await page.locator('.nb-recipe', { hasText: 'See the first few rows' }).click();
+    await expect(page.locator('.ce-input').first()).toHaveValue(/tables\["payroll"\]/);
+    await expect(page.locator('.nb-stdout').first()).toContainText('30 rows', { timeout: 90_000 });
+  }
+});
+
+test('notebook: save and reopen keeps the results, not just the code', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  // Pure Python so this holds with or without the pandas wheels staged.
+  await setCell(page, 0, 'print("ran once")\nsum(r["Amt"] for r in tables["payroll"])');
+  await runCell(page, 0);
+  await expect(page.locator('.nb-repr').first()).toContainText('4650', { timeout: 90_000 });
+
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.nb-toolbar button:has-text("Save")')]);
+  const path = await dl.path();
+  const nb = JSON.parse((await readFile(path!)).toString('utf8'));
+  expect(nb.nbformat).toBe(4);
+  expect(nb.cells[0].outputs.map((o: { output_type: string }) => o.output_type)).toEqual(['stream', 'execute_result']);
+
+  // Reload the tool so nothing is left in memory, then open the file back up.
+  await page.goto('/#/tool/convert');
+  await page.goto('/#/tool/python');
+  const restore = page.locator('.nb-restore button:has-text("Discard")');
+  if (await restore.count()) await restore.click();
+
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.click('.nb-toolbar button:has-text("Open")'),
+  ]);
+  await chooser.setFiles(path!);
+
+  // Results are back on screen without the engine having run anything.
+  await expect(page.locator('.nb-repr').first()).toContainText('4650');
+  await expect(page.locator('.nb-stdout').first()).toContainText('ran once');
+  await expect(page.locator('.nb-count').first()).toContainText('[1]');
+});
+
+test('notebook: a saved table result reopens as a grid, and as HTML in Jupyter', async ({ page }) => {
   test.skip(!pandasStaged, 'pandas wheels not staged in this build');
   test.setTimeout(240_000);
   await bootNotebook(page);
   await setCell(page, 0, 'df_payroll.groupby("Dept", as_index=False)["Amt"].sum().sort_values("Dept")');
-  await page.locator('.nb-cell').nth(0).locator('button:has-text("Run")').click();
-  await page.waitForSelector('.nb-out .grid-row', { timeout: 60_000 });
-  const rows = await gridRows(page, '.nb-out');
+  await runCell(page, 0);
+  await page.waitForSelector('.nb-out-host .grid-row', { timeout: 90_000 });
+
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.nb-toolbar button:has-text("Save")')]);
+  const path = await dl.path();
+  const nb = JSON.parse((await readFile(path!)).toString('utf8'));
+  // The saved file carries a real HTML table, so it is readable in Jupyter too.
+  expect(JSON.stringify(nb.cells[0].outputs)).toContain('text/html');
+
+  await page.goto('/#/tool/convert');
+  await page.goto('/#/tool/python');
+  const restore = page.locator('.nb-restore button:has-text("Discard")');
+  if (await restore.count()) await restore.click();
+
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.click('.nb-toolbar button:has-text("Open")'),
+  ]);
+  await chooser.setFiles(path!);
+
+  await page.waitForSelector('.nb-out-host .grid-row');
+  const rows = await gridRows(page, '.nb-out-host');
   expect(rows.map((r) => [r[1], r[2]])).toEqual([
     ['Fin', '1650'],
     ['IT', '1550'],
@@ -95,12 +168,73 @@ test('notebook: pandas DataFrame renders as a grid', async ({ page }) => {
   ]);
 });
 
+test('notebook: notes render as markdown and .ipynb round-trips both cell kinds', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await setCell(page, 0, 'x = 41\nx + 1');
+  await page.locator('button:has-text("Note")').click();
+  await page.locator('.ce-input').nth(1).fill('# My notes');
+
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.nb-toolbar button:has-text("Save")')]);
+  const path = await dl.path();
+  const nb = JSON.parse((await readFile(path!)).toString('utf8'));
+  expect(nb.cells.map((c: { cell_type: string }) => c.cell_type)).toEqual(['code', 'markdown']);
+
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.click('.nb-toolbar button:has-text("Open")'),
+  ]);
+  await chooser.setFiles(path!);
+  await expect(page.locator('.ce-input').first()).toHaveValue('x = 41\nx + 1');
+  await expect(page.locator('.nb-md')).toContainText('My notes');
+});
+
+// The notebook UI is usable before any file is added, so the tests below never
+// start the Python engine — they cover the editor and the draft, not execution.
+test('notebook: code is syntax-highlighted as you type', async ({ page }) => {
+  await page.goto('/#/tool/python');
+  await setCell(page, 0, 'for i in range(3):  # count\n    print("hi")');
+  await expect(page.locator('.ce-hl .tk-kw').first()).toHaveText('for');
+  await expect(page.locator('.ce-hl .tk-com').first()).toHaveText('# count');
+  await expect(page.locator('.ce-hl .tk-str').first()).toHaveText('"hi"');
+});
+
+test('notebook: unsaved work is offered back after the tab is closed', async ({ page }) => {
+  await page.goto('/#/tool/python');
+  await setCell(page, 0, 'kept = "recover me"');
+  // Autosave is debounced — wait for the write itself, not for a wall clock.
+  await page.waitForFunction(() => !!localStorage.getItem('exceltools.notebook.draft.v1'));
+  await page.goto('/#/tool/convert');
+  await page.goto('/#/tool/python');
+
+  await expect(page.locator('.nb-restore')).toContainText('unsaved work');
+  await page.locator('.nb-restore button:has-text("Restore it")').click();
+  await expect(page.locator('.ce-input').first()).toHaveValue('kept = "recover me"');
+});
+
+test('notebook: drafts can be switched off, which deletes the stored one', async ({ page }) => {
+  await page.goto('/#/tool/python');
+  await setCell(page, 0, 'secret = "client data"');
+  await page.waitForFunction(() => !!localStorage.getItem('exceltools.notebook.draft.v1'));
+
+  await page.locator('.nb-draft input').uncheck();
+  expect(await page.evaluate(() => localStorage.getItem('exceltools.notebook.draft.v1'))).toBeNull();
+
+  // Still off after a revisit, and nothing new is written.
+  await setCell(page, 0, 'more = "typing"');
+  await page.goto('/#/tool/convert');
+  await page.goto('/#/tool/python');
+  await expect(page.locator('.nb-restore')).toHaveCount(0);
+  await expect(page.locator('.nb-draft input')).not.toBeChecked();
+  expect(await page.evaluate(() => localStorage.getItem('exceltools.notebook.draft.v1'))).toBeNull();
+});
+
 test('notebook: matplotlib chart renders as an image', async ({ page }) => {
   test.skip(!mplStaged, 'matplotlib wheels not staged in this build');
   test.setTimeout(240_000);
   await bootNotebook(page);
   await setCell(page, 0, 'import matplotlib.pyplot as plt\ndf_payroll.groupby("Dept")["Amt"].sum().plot(kind="bar")\nplt.tight_layout()');
-  await page.locator('.nb-cell').nth(0).locator('button:has-text("Run")').click();
+  await runCell(page, 0);
   await page.waitForSelector('.nb-img', { timeout: 90_000 });
   const src = await page.locator('.nb-img').first().getAttribute('src');
   expect(src!.length).toBeGreaterThan(5000); // a real PNG, not a stub

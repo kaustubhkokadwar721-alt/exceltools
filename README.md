@@ -7,7 +7,7 @@ PWA. Built for accountants and finance teams, not engineers.
 
 > **Status:** Phases 0–4 complete; Phase 5 hardening mostly done (tests, CI,
 > security, performance, fidelity — only the real-PC pilot remains). Nine tools
-> live, plus native Excel Table import. 34 unit + 12 E2E tests in CI.
+> live, plus native Excel Table import. 80 unit + 24 E2E tests in CI.
 > See [`docs/`](docs/).
 
 ## Live app
@@ -42,7 +42,7 @@ fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 | **Clean** | Trim, collapse spaces, fix case, numbers-from-text, drop blank rows/cols |
 | **Dedupe** | Remove duplicate rows by chosen key columns, keeping first or last |
 | **Query (SQL)** | *(SQL engine)* Stage, rename and register sheets/tables, then run SQL — joins, filters, aggregation |
-| **Python notebook** | *(Python engine)* Jupyter-style cells in the browser — pandas, matplotlib charts, `.ipynb` save/load, no Python install |
+| **Python notebook** | *(Python engine)* Notebook cells in the browser — pandas, matplotlib charts, `.ipynb` save/load, no Python install. Built for people who don't write Python: see below |
 | **Pivot** | *(SQL engine)* Group-by + aggregate summaries (Sum/Avg/Count/Min/Max) |
 
 ### Query workflow (built for non-engineers)
@@ -56,6 +56,40 @@ fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 3. **Copy schema for AI** copies a plain-text schema preamble. Paste it into any
    AI assistant with a request in plain English ("give me department totals"),
    paste the SQL it writes back into the editor, and run.
+
+### Python notebook, for people who don't write Python
+
+The engine is Pyodide; the work went into the parts that decide whether an
+accountant can actually use it.
+
+- **Nothing to type to start.** An empty notebook shows a list of tasks —
+  *total by category*, *rows missing from another table*, *duplicates*, *a bar
+  chart* — and each one inserts working code **written with your own column
+  names**, then runs it. Edit it afterwards; nothing is locked.
+- **Errors in English.** A failed cell says *"There is no column called
+  'Amout'. Did you mean 'Amount'?"* — the traceback is folded away behind
+  *Technical details*. Around twenty of the failures that actually happen
+  (text in a number column, a cell that hasn't been run, a mismatched join key,
+  reading files from disk) are translated (`src/core/pyerrors.ts`).
+- **Your results are saved, not just your code.** `.ipynb` files carry their
+  tables (`text/html` plus a lossless ExcelTools mime) and charts
+  (`image/png`), so reopening one shows the results without re-running — and it
+  still opens in real Jupyter.
+- **Crash recovery.** Work is kept in this browser as you type, and offered
+  back if the tab dies. Nothing leaves the device.
+- **A Stop button that works**, implemented honestly: it restarts the engine and
+  re-registers your tables, and tells you the variables are gone.
+- **Click a column name** in the right-hand list to drop its exact spelling into
+  your code — no transcribing headings with trailing spaces.
+- **In memory** tab shows every table and value Python is holding.
+- Syntax highlighting, auto-indent, bracket closing, comment toggling and
+  Jupyter's keyboard shortcuts, in ~200 lines and **zero new dependencies**.
+
+Why not embed JupyterLite (official, Pyodide-based, also static files)? It
+can't see your workbook — it owns its own kernel behind its own virtual
+filesystem, so you'd export a file and re-import it into a second app — and its
+JupyterLab UI assumes a user who knows what a kernel is. Full reasoning in
+[`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md#decision-12--build-the-notebook-dont-embed-jupyterlite).
 
 ## Architecture
 
@@ -75,7 +109,7 @@ Two-tier engine strategy — match the engine to the tool:
 - All spreadsheet parsing runs in a **Web Worker** — the UI never freezes.
 - Each tool is a lazily-loaded chunk; the ~40 MB DuckDB engine is excluded from
   the PWA precache and runtime-cached on first Query/Pivot use, so light-tool
-  users never download it (precache stays < 700 KiB).
+  users never download it (precache is ~750 KiB — app code, styles and fonts).
 - **Native Excel Tables** are extracted directly from the xlsx zip
   (`src/core/tables.ts`) since SheetJS doesn't surface them; tables register into
   DuckDB with exact per-column types via a typed-CSV load
@@ -88,9 +122,12 @@ Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
 
 ## Quality
 
-- **34 unit tests** (Vitest) over the pure transform/validation/zip/table/source
-  modules and **12 E2E tests** (Playwright) — one per tool plus Excel-Table
-  import, staged rename + schema, and a **no-external-requests privacy guard**.
+- **80 unit tests** (Vitest) over the pure modules — transform, validation, zip,
+  tables, source, plus the notebook's `.ipynb` round-trip (results included),
+  error translation, recipe generation, draft storage and syntax highlighting —
+  and **24 E2E tests** (Playwright): one per tool, Excel-Table import, staged
+  rename + schema, a **no-external-requests privacy guard**, and the notebook's
+  save/reopen, recovery, recipes and plain-English errors.
 - CI (`.github/workflows/test.yml`) runs typecheck + unit + E2E on every PR and
   push to `main`; deploys only happen from `main`.
 - Measured performance limits (soft warn 25 MB, hard cap 100 MB) —
