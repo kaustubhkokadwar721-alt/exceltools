@@ -7,7 +7,7 @@ PWA. Built for accountants and finance teams, not engineers.
 
 > **Status:** Phases 0–4 complete; Phase 5 hardening mostly done (tests, CI,
 > security, performance, fidelity — only the real-PC pilot remains). Nine tools
-> live, plus native Excel Table import. 106 unit + 39 E2E tests in CI.
+> live, plus native Excel Table import. 111 unit + 41 E2E tests in CI.
 > See [`docs/`](docs/).
 
 ## Live app
@@ -168,10 +168,10 @@ Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
 
 ## Quality
 
-- **106 unit tests** (Vitest) over the pure modules — transform, validation, zip,
+- **111 unit tests** (Vitest) over the pure modules — transform, validation, zip,
   tables, source, plus the notebook's `.ipynb` round-trip (results included),
   error translation, recipe generation, draft storage and syntax highlighting —
-  and **39 E2E tests** (Playwright): one per tool, Excel-Table import, staged
+  and **41 E2E tests** (Playwright): one per tool, Excel-Table import, staged
   rename + schema, a **no-external-requests privacy guard**, and the notebook's
   save/reopen, recovery, recipes and plain-English errors.
 - CI (`.github/workflows/test.yml`) runs typecheck + unit + E2E on every PR and
@@ -196,8 +196,8 @@ npm install
 npm run dev        # dev server
 npm run build      # → dist/ (static, self-contained)
 npm run preview    # serve dist/ locally; test PWA + offline in DevTools
-npm run test       # 106 unit tests (Vitest)
-npm run test:e2e   # 39 E2E tests (Playwright, against the production build)
+npm run test       # 111 unit tests (Vitest)
+npm run test:e2e   # 41 E2E tests (Playwright, against the production build)
 npm run package    # → exceltools-offline.zip (offline distributable)
 npm run typecheck
 ```

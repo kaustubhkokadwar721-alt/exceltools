@@ -128,8 +128,12 @@ describe('ipynb round-trip', () => {
     expect(JSON.parse(json).metadata.exceltools.title).toBe('Q1 GST reconciliation');
     expect(titleFromIpynb(json)).toBe('Q1 GST reconciliation');
 
-    // No name given, and a foreign notebook that never had one.
-    expect(JSON.parse(toIpynb([{ kind: 'code', source: 'x' }])).metadata.exceltools).toBeUndefined();
+    // No name given: the block still records what produced the file, but
+    // carries no title to read back.
+    const untitled = JSON.parse(toIpynb([{ kind: 'code', source: 'x' }])).metadata.exceltools;
+    expect(untitled.title).toBeUndefined();
+    expect(untitled.producedBy).toMatch(/^ExcelTools /);
+    expect(untitled.savedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(titleFromIpynb(toIpynb([{ kind: 'code', source: 'x' }], '   '))).toBe('');
     expect(titleFromIpynb('{"nbformat":4,"cells":[]}')).toBe('');
     expect(titleFromIpynb('not json')).toBe('');

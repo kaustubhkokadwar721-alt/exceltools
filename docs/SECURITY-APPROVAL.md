@@ -52,6 +52,8 @@ you would be accepting.
 | R2 | The user is **running arbitrary Python and SQL** by design. A user can write a slow or memory-hungry step and hang their own browser tab. | Low | Accepted. It affects one tab, not the machine. There is a Stop button. |
 | R3 | The **notebook stores a draft** of your work in the browser's local storage, so a crashed tab does not lose an hour. That is data at rest on the machine. | Low | Disclosed, bounded, and switchable off in the interface. See §B6. |
 | R4 | Downloaded results land in the user's **Downloads folder** like any other download, outside the tool's control. | Low | Firm data-handling policy applies as it does to any download. |
+| R8 | A client file could carry a **cell that Excel treats as a formula** (`=cmd\|…`), which would run when a converted CSV is reopened. | — | **Closed.** CSV/TSV exports and clipboard copies now mark such text as text, so Excel does not evaluate it. |
+| R9 | A **notebook file from a colleague** is code, and could be run without being read. | — | **Closed.** Opening one blocks execution until you confirm you have read its steps. |
 | R5 | **Key-person risk.** One person wrote and maintains this. There is no second maintainer today. | Medium | Not a technical risk; a continuity risk. Raised deliberately — see §A5. |
 | R6 | **Numerical correctness is asserted by tests, not by an independent validation.** The tests prove the code behaves as written. | Medium | See §A4. This is the risk most relevant to audit work. |
 | R7 | If the **hosted** copy is used, the machine fetches the application from GitHub each visit. | Low | Avoidable entirely: use the offline copy (§B2). No client data is involved either way. |
@@ -60,7 +62,7 @@ you would be accepting.
 
 It does not claim the figures are right.
 
-There are 106 automated tests covering the transformation logic and 39 covering the
+There are 111 automated tests covering the transformation logic and 41 covering the
 application end to end. Those prove the software does what its author intended. They
 are not an independent reconciliation of ExcelTools output against Excel output on a
 body of real firm data — particularly for Indian date formats, lakh/crore separators,
@@ -343,9 +345,10 @@ a substantial change and should not be decided casually.
 | Item | Value |
 |---|---|
 | Reviewed | 25 July 2026 |
-| Tests at review | 106 unit, 39 end-to-end, all passing |
-| Open issues | 1 (§5) |
-| Fixed while preparing this pack | 3 HTML-injection defects (§C3); unverified build-time downloads; CI token scope; missing security headers on the offline launcher — see `SECURITY-PLAN.md` |
+| Tests at review | 111 unit, 41 end-to-end, all passing |
+| Open issues | 4, of which 1 blocks approval (§5) |
+| Fixed while preparing this pack | 8 items — 3 HTML-injection defects (§C3), unverified build-time downloads, CI token scope, security headers on the offline launcher, spreadsheet formula injection on export, and unreviewed notebook execution. Full register in `SECURITY-PLAN.md` |
+| Still open | 4 — one High (§5), the rest tracked in `SECURITY-PLAN.md` |
 | Not independently validated | numerical correctness vs Excel (§A4) |
 
 Record the exact commit used for any engagement. The claims in this pack apply to that

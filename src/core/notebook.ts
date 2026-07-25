@@ -33,6 +33,13 @@ export interface NotebookCell {
   elapsedMs?: number;
 }
 
+/** Build identity, stamped into saved notebooks. Falls back outside a build. */
+function producedBy(): string {
+  const version = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
+  const built = typeof __BUILD_DATE__ === 'string' ? __BUILD_DATE__ : 'unbuilt';
+  return `ExcelTools ${version} (build ${built})`;
+}
+
 /** Our lossless table payload. Jupyter ignores unknown mimes; we read it back. */
 const TABLE_MIME = 'application/vnd.exceltools.grid+json';
 /** Rows persisted per table output — keeps saved notebooks a sane size. */
@@ -138,9 +145,14 @@ export function toIpynb(cells: NotebookCell[], title?: string): string {
     metadata: {
       kernelspec: { display_name: 'Python (Pyodide)', language: 'python', name: 'python3' },
       language_info: { name: 'python', version: '3.14' },
-      // What this piece of work is called, so a filed notebook is identifiable
-      // by more than its filename. Jupyter carries unknown metadata untouched.
-      ...(title?.trim() ? { exceltools: { title: title.trim() } } : {}),
+      // What this piece of work is called and what produced it, so a filed
+      // notebook is identifiable and traceable by more than its filename.
+      // Jupyter carries unknown metadata through untouched.
+      exceltools: {
+        ...(title?.trim() ? { title: title.trim() } : {}),
+        producedBy: producedBy(),
+        savedAt: new Date().toISOString(),
+      },
     },
     cells: cells.map((c): IpynbCell => {
       // Folded state travels in the fields Jupyter itself uses, so a notebook

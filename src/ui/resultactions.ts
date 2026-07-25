@@ -9,13 +9,18 @@ import { el, button } from './controls';
 import { toast } from './toast';
 import { downloadBlob } from '../core/fileio';
 import { serializeSheet } from '../core/parser';
+import { neutralizeFormula } from '../core/csvsafe';
 import type { SheetData, CellValue } from '../core/types';
 
 const cellText = (v: CellValue): string => (v === null || v === undefined ? '' : String(v));
 
-/** Tab-separated text — what a spreadsheet expects from the clipboard. */
+/**
+ * Tab-separated text — what a spreadsheet expects from the clipboard. Values
+ * are formula-neutralised first: the clipboard lands in Excel cells, and Excel
+ * evaluates anything that starts like a formula. See core/csvsafe.ts.
+ */
 export function toTsv(sheet: SheetData): string {
-  const clean = (s: string): string => s.replace(/[\t\r\n]+/g, ' ');
+  const clean = (s: string): string => neutralizeFormula(s).replace(/[\t\r\n]+/g, ' ');
   return [sheet.headers.map(clean).join('\t'), ...sheet.rows.map((r) => r.map((c) => clean(cellText(c))).join('\t'))].join('\n');
 }
 

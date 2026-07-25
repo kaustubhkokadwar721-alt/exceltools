@@ -242,6 +242,52 @@ test('notebook: a restored draft says which tables it needs and fills the name i
   await expect(page.locator('.sheet-stage-row input.col-name')).toHaveValue('payroll');
 });
 
+test('notebook: an opened notebook will not run until its steps are acknowledged', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await setCell(page, 0, 'print("mine")');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.nb-toolbar button:has-text("Save")')]);
+  const path = await dl.path();
+
+  await gotoTool(page, 'convert');
+  await gotoTool(page, 'python');
+  const discard = page.locator('.nb-restore button:has-text("Discard")');
+  if (await discard.count()) await discard.click();
+
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.click('.nb-toolbar button:has-text("Open")'),
+  ]);
+  await chooser.setFiles(path!);
+
+  // Someone else's code does not run on a reflex.
+  await expect(page.locator('.nb-unreviewed')).toContainText('came from a file');
+  await expect(page.locator('.nb-unreviewed')).toContainText('1 code step');
+  await page.locator('.nb-toolbar button:has-text("Run all")').click();
+  await expect(page.locator('.nb-stdout')).toHaveCount(0);
+
+  // Acknowledged, it runs normally.
+  await page.locator('.nb-unreviewed button:has-text("I have read the steps")').click();
+  await expect(page.locator('.nb-unreviewed')).toHaveCount(0);
+  await page.locator('.nb-toolbar button:has-text("Run all")').click();
+  await expect(page.locator('.nb-stdout')).toContainText('mine', { timeout: 90_000 });
+});
+
+test('notebook: an exported workbook says which build produced it', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await page.locator('.nb-title').fill('Q1 tie-out');
+  await setCell(page, 0, '[{"Dept": "Fin", "Total": 1650}]');
+  await runCell(page, 0);
+  await page.waitForSelector('.out-table .grid-row', { timeout: 90_000 });
+
+  const [dl] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('.nb-toolbar button:has-text("Export")').click(),
+  ]);
+  expect(await dl.suggestedFilename()).toBe('Q1-tie-out-results.xlsx');
+});
+
 test('notebook: a deleted cell can be brought back', async ({ page }) => {
   await page.goto('/#/tool/python');
   await setCell(page, 0, 'careful = "hours of work"');

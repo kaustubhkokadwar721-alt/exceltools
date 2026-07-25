@@ -63,12 +63,17 @@ controls, and they are genuinely well-founded:
 - **Untrusted HTML from opened notebooks is never rendered** — the `.ipynb`
   reader deliberately ignores `text/html` from foreign files and takes only
   plain text, images and its own structured format.
-- **CI runs on every change**: typecheck, 106 unit tests, 39 end-to-end tests
+- **CI runs on every change**: typecheck, 111 unit tests, 41 end-to-end tests
   including the no-exfiltration guard.
 
 ---
 
 ## 3. Findings
+
+Fixed items are listed first. OPEN-3, OPEN-4 and OPEN-6 from the first pass were
+closed by FIXED-6, FIXED-7 and FIXED-8 respectively; their original numbers are
+kept in those headings so earlier references still resolve.
+
 
 ### FIXED-1 — Attacker-controlled text reached HTML in three places · *was: Medium*
 
@@ -136,6 +141,47 @@ control that clears or exports their data.
 Bluetooth and payment. This makes the **offline copy the most hardened way to
 run the product** — which is convenient, because it is the one to sanction.
 
+### FIXED-5 — Spreadsheet formula injection on export · *was: Medium*
+
+Surfaced by the `/security-review` pass over the branch. A cell whose *text*
+begins with `=`, `+`, `-` or `@` is evaluated by Excel when a CSV is reopened or
+a clipboard paste lands in cells. A client file containing `=cmd|'/c calc'!A1`
+therefore turned this tool into the delivery mechanism (T1).
+
+It was originally logged as sub-threshold *for a diff review* — the export path
+predates this branch — but that is a scoping rule, not a judgement about
+severity, and this is the one class where ExcelTools itself carries the payload
+onto the machine.
+
+**Fixed.** `src/core/csvsafe.ts` prefixes risky text with an apostrophe —
+Excel's own "this is text" marker — applied to CSV and TSV export in the parser
+worker (so every tool in the suite benefits) and to the clipboard TSV. `.xlsx`
+needs no change: SheetJS writes these as string cells, which Excel never
+evaluates. Numbers stored as text (`-5`, `+919876543210`) are deliberately left
+verbatim, because quoting them would corrupt ordinary finance data.
+
+This is also a fidelity fix: the parser yields computed values, never formula
+source, so a value starting with `=` is text that merely looks like a formula.
+
+### FIXED-6 — Opening a foreign notebook ran on a reflex · *was: Medium (OPEN-3)*
+
+**Fixed.** Opening an `.ipynb` that contains code now raises a banner naming the
+file and the number of steps, and **execution is blocked** — both Run all and
+per-cell Run — until the user confirms they have read them. Nothing auto-ran
+before either, but Run all was one click away, which is exactly how T2 lands.
+
+### FIXED-7 — Service worker cached opaque responses · *was: Low (OPEN-4)*
+
+**Fixed.** `cacheableResponse.statuses` is now `[200]` in both runtime caches.
+
+### FIXED-8 — Exports carried no provenance · *was: Medium (OPEN-6)*
+
+**Fixed.** A workbook export now leads with an *About this export* sheet naming
+the analysis, the build that produced it (`__APP_VERSION__` + build date, stamped
+at build time so it cannot go stale), the export timestamp, and the source tables
+with row counts. Saved `.ipynb` files carry the same build identity in metadata.
+Not a vulnerability — a reperformance control, and reviewers ask for it.
+
 ### OPEN-1 — `xlsx` carries two published advisories · **High** · *blocks approval*
 
 `xlsx@0.18.5`: GHSA-4r6h-8v6p-xvw6 (prototype pollution) and GHSA-5pgg-2g8v-p4x9
@@ -163,27 +209,6 @@ publish a modified application to the URL your firm trusts. T4 again.
 **Action:** pin every action to a full commit SHA (`actions/checkout@<sha> # v4`).
 Fifteen minutes; enable Dependabot to keep them current.
 
-### OPEN-3 — Opening a foreign notebook does not warn before running · **Medium**
-
-A `.ipynb` is code. Opening one is safe — nothing auto-runs — but **Run all** is
-one click away, and a colleague-forwarded notebook is exactly how T2 arrives. The
-blast radius is bounded (no network, no disk, in-memory FS), but Python in the
-worker can reach the worker's JS scope, so a hostile notebook could at minimum
-fabricate convincing but wrong results.
-
-**Action:** when a notebook is opened from a file, show a one-line banner —
-*"This notebook came from a file and contains N code steps. Read them before
-running."* — and require one dismissal before Run all. Cheap, and it converts an
-invisible risk into an informed choice.
-
-### OPEN-4 — Service worker caches opaque responses · **Low**
-
-`vite.config.ts` runtime caching allows `statuses: [0, 200]`. Status 0 is an
-opaque cross-origin response. Same-origin policy plus `connect-src 'self'` make
-this hard to reach, but there is no reason to permit it.
-
-**Action:** change to `statuses: [200]`. Two minutes.
-
 ### OPEN-5 — No Trusted Types · **Low**
 
 About twenty `innerHTML` assignments remain. All currently take literal templates
@@ -193,14 +218,6 @@ prevents the next one from being unsafe.
 **Action:** adopt `require-trusted-types-for 'script'` with a single vetted
 policy, which makes unescaped assignment throw rather than execute. Half a day;
 converts a discipline into an enforced rule.
-
-### OPEN-6 — Exports carry no provenance · **Medium (audit-specific)**
-
-A downloaded CSV/XLSX has nothing identifying which tool version produced it, from
-which source, when. Not a vulnerability; a *reperformance* gap, and reviewers ask.
-
-**Action:** stamp exports with tool version, timestamp and source file name — an
-extra sheet in workbook exports, a header comment in CSV.
 
 ### OPEN-7 — Numerical correctness is untested against Excel · **Medium**
 
@@ -225,8 +242,8 @@ and release, and a pinned version per engagement.
 
 Sequenced by risk-reduction per hour, not by how interesting the work is.
 
-### Phase 0 — done in this pass
-FIXED-1 through FIXED-4 above. No further action.
+### Phase 0 — done
+FIXED-1 through FIXED-8 above. No further action.
 
 ### Phase 1 — before anyone else uses it *(about a day)*
 
@@ -234,8 +251,7 @@ FIXED-1 through FIXED-4 above. No further action.
 |---|---|---|
 | 1.1 | Close **OPEN-1** (upgrade `xlsx`) | The only High left; needs a machine that can reach the vendor CDN |
 | 1.2 | Pin actions to SHAs (**OPEN-2**) | Protects the channel that reaches every PC |
-| 1.3 | `statuses: [200]` (**OPEN-4**) | Two minutes |
-| 1.4 | Foreign-notebook banner (**OPEN-3**) | Converts a hidden risk into an informed click |
+
 
 **Exit criteria:** `npm audit --omit=dev` clean; every action SHA-pinned; the full
 suite green.
@@ -245,8 +261,7 @@ suite green.
 | Step | Item |
 |---|---|
 | 2.1 | Golden-dataset correctness tests in CI (**OPEN-7**) |
-| 2.2 | Provenance stamp on exports (**OPEN-6**) |
-| 2.3 | Version-pin per engagement; record the commit in the workpaper |
+| 2.2 | Version-pin per engagement; record the commit in the workpaper |
 
 **Exit criteria:** a documented validation file a reviewer can inspect, and any
 export traceable to the exact version that produced it.
@@ -295,8 +310,14 @@ tab during real use.
 
 ---
 
-**Audit date:** 25 July 2026 · **Fixed in this pass:** 4 · **Open:** 8
-(1 High, 5 Medium, 2 Low) · **Blocking approval:** OPEN-1.
+**Audit date:** 25 July 2026 · **Fixed:** 8 · **Open:** 4
+(1 High, 2 Medium, 1 Low) · **Blocking approval:** OPEN-1.
+
+Remaining open: **OPEN-1** (xlsx advisories — High, needs a machine that can
+reach the vendor CDN), **OPEN-2** (SHA-pin the GitHub Actions), **OPEN-5**
+(Trusted Types), **OPEN-7** (golden-dataset correctness — needs real firm files
+and agreed expected values), **OPEN-8** (second maintainer). The last two cannot
+be closed by code alone.
 
 This document is the working record. `SECURITY-APPROVAL.md` is the version for
 the partner and the IT administrator; `SECURITY.md` is the technical attestation.

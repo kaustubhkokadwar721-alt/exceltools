@@ -70,6 +70,8 @@ const state = {
   title: '',
   /** Table names a restored draft was written against, so staging can match. */
   expectedTables: [] as string[],
+  /** True while an opened notebook's code is waiting to be reviewed. */
+  unreviewed: false,
   cellSeq: 1,
   execSeq: 1,
   rail: 'tables' as 'tables' | 'variables',
@@ -96,6 +98,7 @@ export function mountPython(host: HTMLElement): void {
   state.rail = 'tables';
   state.title = '';
   state.expectedTables = [];
+  state.unreviewed = false;
   state.cells = [newCell('code')];
 
   host.innerHTML = `
@@ -913,6 +916,7 @@ async function ensureEngine(): Promise<void> {
 
 async function runOne(cell: UICell, then: 'stay' | 'advance' | 'insert'): Promise<boolean> {
   if (cell.kind !== 'code' || cell.running) return true;
+  if (blockedPendingReview()) return false;
   if (!cell.source.trim()) {
     if (then !== 'stay') focusNeighbour(cell, 1);
     return true;
@@ -992,6 +996,7 @@ function clearResults(): void {
 }
 
 async function runAll(): Promise<void> {
+  if (blockedPendingReview()) return;
   const code = state.cells.filter((c) => c.kind === 'code' && c.source.trim());
   if (!code.length) {
     toast('Nothing to run yet — add a step first.', 'warning', 4000);
@@ -1241,7 +1246,22 @@ async function exportWorkbook(): Promise<void> {
     return;
   }
   try {
-    const { blob, ext } = await serializeWorkbook(sheets);
+    // A workbook that goes into a file needs to say where it came from — which
+    // build, from which tables, when — or nobody can reperform it later.
+    const provenance: SheetData = {
+      name: 'About this export',
+      headers: ['Field', 'Value'],
+      rows: [
+        ['Analysis', state.title.trim() || '(unnamed)'],
+        ['Produced by', `ExcelTools ${__APP_VERSION__} (build ${__BUILD_DATE__})`],
+        ['Exported at', new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC'],
+        ['Source tables', state.registered.map((r) => `${r.name} (${r.sheet.totalRows.toLocaleString()} rows)`).join('; ') || '(none registered)'],
+        ['Result sheets', String(sheets.length)],
+        ['Note', 'Figures are the values computed by the steps in the notebook, not live formulas.'],
+      ],
+      totalRows: 6,
+    };
+    const { blob, ext } = await serializeWorkbook([provenance, ...sheets]);
     downloadBlob(blob, `${baseFileName()}-results.${ext}`);
     toast(`Exported ${sheets.length} result${sheets.length === 1 ? '' : 's'}, one sheet each.`, 'success', 5000);
   } catch (e) {
@@ -1262,10 +1282,51 @@ async function openIpynb(): Promise<void> {
     state.title = titleFromIpynb(text) || files[0].name.replace(/\.ipynb$/i, '');
     renderToolbar();
     loadCells(loaded);
+    // A notebook is code. Opening one is safe — nothing runs by itself — but
+    // Run all is one click away, and a forwarded notebook is exactly how
+    // someone else's code ends up executing against your client data.
+    const codeSteps = loaded.filter((c) => c.kind === 'code' && c.source.trim()).length;
+    if (codeSteps) askBeforeRunning(files[0].name, codeSteps);
     toast(`Opened "${files[0].name}" — ${loaded.length} cell(s), results included.`, 'success', 5000);
   } catch (e) {
     toast(`Could not open that notebook: ${msg(e)}`, 'error', 7000);
   }
+}
+
+/**
+ * Hold execution of a notebook that came from a file until the user says they
+ * have looked at it. It cannot reach the network or the disk, but it can read
+ * every table you have registered and produce confident-looking wrong answers —
+ * so the choice to run someone else's steps should be a choice, not a reflex.
+ */
+function askBeforeRunning(fileName: string, codeSteps: number): void {
+  state.unreviewed = true;
+  const host = q('#restore');
+  host.innerHTML = '';
+  host.append(
+    el('div', { class: 'nb-restore nb-unreviewed' }, [
+      el('div', {}, [
+        el('strong', {}, ['This notebook came from a file.']),
+        el('span', {}, [
+          ` "${fileName}" contains ${codeSteps} code step${codeSteps === 1 ? '' : 's'} written elsewhere. Read them before you run them — they can use every table you register.`,
+        ]),
+      ]),
+      el('div', { class: 'nb-restore-acts' }, [
+        button('I have read the steps — allow running', () => {
+          state.unreviewed = false;
+          host.innerHTML = '';
+        }),
+      ]),
+    ]),
+  );
+}
+
+/** True when execution is blocked pending review; also nudges the user. */
+function blockedPendingReview(): boolean {
+  if (!state.unreviewed) return false;
+  toast('Read the opened notebook\'s steps first, then select "I have read the steps" at the top.', 'warning', 6000);
+  q('#restore').scrollIntoView({ block: 'nearest' });
+  return true;
 }
 
 function loadCells(cells: NotebookCell[]): void {
