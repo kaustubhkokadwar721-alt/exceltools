@@ -159,6 +159,33 @@ in place, rather than re-rendering the notebook on every action. That is what
 makes typing, selection, scroll position and focus survive a run — and it was a
 prerequisite for everything above, not a polish item.
 
+## Decision 13 — the screen belongs to the work
+
+A tool's heading, blurb, help panel and drop area are onboarding: useful for
+thirty seconds, then pure overhead. Measured on a 1080px laptop they pushed the
+first cell to y≈650. So they collapse (`src/ui/toolchrome.ts`): once tables are
+registered the drop area becomes a one-line summary of what is loaded and the
+heading loses its blurb, both reversible. The toolbar is pinned, so **Stop** is
+reachable from anywhere in a long notebook.
+
+Results are the other half. Each one is labelled with what it is and how big it
+is, tinted by type (printed / table / chart / error), and foldable — folded
+state travels in the same `.ipynb` fields Jupyter uses (`jupyter.source_hidden`,
+`collapsed`), so a notebook folded here opens folded there. Errors sit outside
+the fold; hiding the thing that went wrong is never the right default.
+
+Every table result carries **Copy / CSV / Excel** (`src/ui/resultactions.ts`),
+reusing the parser worker's serializer. This is the difference between a tool
+and a demo: an accountant who cannot get the answer back into a spreadsheet
+will retype it, and retyping is where errors come from. Copy writes TSV
+specifically, because that is what pastes into cells rather than one blob.
+
+For the same reason the worker now recognises plain-Python tabular shapes — a
+list of dicts, a list of equal-length rows, a dict of totals
+(`_xt_to_table`) — and renders them as grids with exports instead of one long
+line of `repr`. Without pandas staged, that is the difference between a usable
+answer and an unreadable one.
+
 ## Open risks carried into later phases
 
 1. **Deployment on locked-down PCs** — CSP overrides, `file://` WASM restrictions,

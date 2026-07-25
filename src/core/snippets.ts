@@ -44,18 +44,25 @@ const ID_LIKE = /(^|[_\s])(id|no|nos|num|number|ref|reference|code|key|serial|sr
 /** A sensible grouping column: prefer text, fall back to the first column. */
 const groupCol = (t: SnippetTable): SnippetColumn | undefined => firstOf(t, ['text', 'boolean']) ?? t.columns[0];
 
+/** Column that looks like it holds dates, by name. */
+const DATE_LIKE = /date|month|period|day|posted|quarter|year|dt$/i;
+
 /**
  * A sensible column to add up. Totalling an invoice number is never what
- * anyone meant, so identifier-looking columns are passed over first.
+ * anyone meant, and totalling a date is worse — dates arrive from Excel as
+ * numbers, so both shapes are passed over before falling back.
  */
 const valueCol = (t: SnippetTable): SnippetColumn | undefined => {
   const numeric = t.columns.filter((c) => c.kind === 'number');
-  return numeric.find((c) => !ID_LIKE.test(c.name)) ?? numeric[0] ?? t.columns[t.columns.length - 1];
+  return (
+    numeric.find((c) => !ID_LIKE.test(c.name) && !DATE_LIKE.test(c.name)) ??
+    numeric.find((c) => !DATE_LIKE.test(c.name)) ??
+    numeric[0] ??
+    t.columns[t.columns.length - 1]
+  );
 };
 
-/** Column that looks like it holds dates, by name. */
-const dateCol = (t: SnippetTable): SnippetColumn | undefined =>
-  t.columns.find((c) => /date|month|period|day|posted|invoice.?dt/i.test(c.name));
+const dateCol = (t: SnippetTable): SnippetColumn | undefined => t.columns.find((c) => DATE_LIKE.test(c.name));
 
 /**
  * Build the recipe list for the tables currently registered. Recipes whose

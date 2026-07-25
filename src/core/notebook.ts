@@ -25,6 +25,12 @@ export interface NotebookCell {
   execCount?: number;
   /** Friendly + raw error text from the last run, when it failed. */
   error?: string;
+  /** Code folded away. Round-trips as Jupyter's `jupyter.source_hidden`. */
+  sourceHidden?: boolean;
+  /** Results folded away. Round-trips as nbformat's `collapsed`. */
+  outputsHidden?: boolean;
+  /** Wall-clock time of the last run, in ms. Ours; Jupyter ignores it. */
+  elapsedMs?: number;
 }
 
 /** Our lossless table payload. Jupyter ignores unknown mimes; we read it back. */
@@ -134,7 +140,13 @@ export function toIpynb(cells: NotebookCell[]): string {
       language_info: { name: 'python', version: '3.14' },
     },
     cells: cells.map((c): IpynbCell => {
-      if (c.kind === 'markdown') return { cell_type: 'markdown', metadata: {}, source: asLines(c.source) };
+      // Folded state travels in the fields Jupyter itself uses, so a notebook
+      // folded here opens folded there, and vice versa.
+      const metadata: Record<string, unknown> = {};
+      if (c.sourceHidden) metadata.jupyter = { source_hidden: true };
+      if (c.outputsHidden) metadata.collapsed = true;
+      if (c.elapsedMs !== undefined) metadata.exceltools = { elapsedMs: Math.round(c.elapsedMs) };
+      if (c.kind === 'markdown') return { cell_type: 'markdown', metadata, source: asLines(c.source) };
       const outputs: IpynbOutput[] = [];
       if (c.stdout) outputs.push({ output_type: 'stream', name: 'stdout', text: asLines(c.stdout) });
       for (const o of c.outputs ?? []) outputs.push(outputToIpynb(o));
@@ -148,7 +160,7 @@ export function toIpynb(cells: NotebookCell[]): string {
       }
       return {
         cell_type: 'code',
-        metadata: {},
+        metadata,
         execution_count: c.execCount ?? null,
         source: asLines(c.source),
         outputs,
@@ -166,6 +178,14 @@ export function fromIpynb(json: string): NotebookCell[] {
     .filter((c) => c.cell_type === 'code' || c.cell_type === 'markdown')
     .map((c) => {
       const cell: NotebookCell = { kind: c.cell_type as NotebookCellKind, source: asText(c.source) };
+      const meta = (c.metadata ?? {}) as {
+        collapsed?: boolean;
+        jupyter?: { source_hidden?: boolean };
+        exceltools?: { elapsedMs?: number };
+      };
+      if (meta.jupyter?.source_hidden) cell.sourceHidden = true;
+      if (meta.collapsed) cell.outputsHidden = true;
+      if (typeof meta.exceltools?.elapsedMs === 'number') cell.elapsedMs = meta.exceltools.elapsedMs;
       if (cell.kind === 'markdown') return cell;
       if (typeof c.execution_count === 'number') cell.execCount = c.execution_count;
       const stdout: string[] = [];

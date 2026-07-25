@@ -242,6 +242,115 @@ test('notebook: drafts can be switched off, which deletes the stored one', async
   expect(await page.evaluate(() => localStorage.getItem('exceltools.notebook.draft.v1'))).toBeNull();
 });
 
+test('notebook: onboarding chrome collapses once tables are registered', async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.goto('/#/tool/python');
+  // Before: full drop area, full heading.
+  await expect(page.locator('.dropzone')).toBeVisible();
+  await expect(page.locator('.tool-head .tool-blurb')).toBeVisible();
+
+  await bootNotebook(page);
+
+  // After: a one-line summary of what is loaded, and a compact heading.
+  await expect(page.locator('.dropzone')).toHaveCount(0);
+  await expect(page.locator('.src-bar')).toContainText('1 table ready');
+  await expect(page.locator('.src-chip')).toContainText('payroll');
+  await expect(page.locator('.src-chip')).toContainText('30 rows');
+  await expect(page.locator('.tool-head')).toHaveClass(/is-compact/);
+  await expect(page.locator('.tool-head .tool-blurb')).toBeHidden();
+
+  // And it is reversible — the drop area comes back on demand.
+  await page.locator('.src-bar-add').click();
+  await expect(page.locator('.dropzone')).toBeVisible();
+});
+
+test('notebook: code and results fold away, errors never do', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await setCell(page, 0, 'print("kept")\n1 + 1');
+  await runCell(page, 0);
+  await expect(page.locator('.nb-repr').first()).toContainText('2', { timeout: 90_000 });
+
+  // Fold the code — the first line stays as a label.
+  await page.locator('.nb-cell').first().locator('.nb-gutter .nb-fold').click();
+  await expect(page.locator('.ce-input')).toHaveCount(0);
+  await expect(page.locator('.nb-folded code')).toContainText('print("kept")');
+  await expect(page.locator('.nb-folded-meta')).toContainText('2 lines hidden');
+
+  // Fold the results.
+  await page.locator('.out-fold').click();
+  await expect(page.locator('.nb-repr')).toHaveCount(0);
+  await expect(page.locator('.out-head-meta')).toContainText('results hidden');
+
+  // Unfold both by clicking the preview and the results chevron.
+  await page.locator('.nb-folded').click();
+  await expect(page.locator('.ce-input').first()).toHaveValue('print("kept")\n1 + 1');
+  await page.locator('.out-fold').click();
+  await expect(page.locator('.nb-repr').first()).toContainText('2');
+
+  // An error is not part of the fold — it is always on screen.
+  await setCell(page, 0, 'raise ValueError("boom")');
+  await runCell(page, 0);
+  await expect(page.locator('.nb-err-title')).toBeVisible({ timeout: 30_000 });
+  await page.locator('.nb-cell').first().locator('.nb-gutter .nb-fold').click();
+  await expect(page.locator('.nb-err-title')).toBeVisible();
+});
+
+test('notebook: a table result is labelled and can be taken back to Excel', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await setCell(page, 0, 'tables["payroll"][:3]');
+  await runCell(page, 0);
+  // Pure-Python lists render as a value; use pandas for the table when staged.
+  if (pandasStaged) {
+    await setCell(page, 0, 'df_payroll.head(3)');
+    await runCell(page, 0);
+  } else {
+    test.skip(true, 'a table result needs pandas, which is not staged in this build');
+  }
+
+  await expect(page.locator('.out-table .out-label-kind')).toHaveText('Table');
+  await expect(page.locator('.out-table .out-label-meta')).toContainText('3 rows × 3 columns');
+
+  const [dl] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('.out-table button:has-text("CSV")').click(),
+  ]);
+  expect(await dl.suggestedFilename()).toMatch(/^notebook-step-\d+.*\.csv$/);
+});
+
+test('notebook: Clear results empties every result and keeps the code', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await setCell(page, 0, 'print("here")');
+  await runCell(page, 0);
+  await expect(page.locator('.nb-stdout')).toContainText('here', { timeout: 90_000 });
+  await expect(page.locator('.nb-count').first()).toContainText('[1]');
+
+  await page.locator('button:has-text("Clear results")').click();
+  await expect(page.locator('.nb-stdout')).toHaveCount(0);
+  await expect(page.locator('.nb-count').first()).toContainText('[ ]');
+  await expect(page.locator('.ce-input').first()).toHaveValue('print("here")');
+});
+
+test('notebook: the column list can be filtered when a table is wide', async ({ page }) => {
+  test.setTimeout(240_000);
+  const WIDE = xlsxBase64([
+    Array.from({ length: 15 }, (_, i) => (i === 7 ? 'Closing Balance' : `Col ${i}`)),
+    Array.from({ length: 15 }, (_, i) => i),
+  ]);
+  await page.goto('/#/tool/python');
+  await dropXlsx(page, '.dropzone', 'wide.xlsx', WIDE);
+  await page.waitForSelector('.sheet-stage-row input.col-name', { timeout: 60_000 });
+  await page.click('button:has-text("Register")');
+  await page.waitForSelector('.schema-block', { timeout: 150_000 });
+
+  await expect(page.locator('.schema-col')).toHaveCount(15);
+  await page.locator('.rail-filter').fill('balance');
+  await expect(page.locator('.schema-col:visible')).toHaveCount(1);
+  await expect(page.locator('.schema-col:visible')).toContainText('Closing Balance');
+});
+
 test('notebook: matplotlib chart renders as an image', async ({ page }) => {
   test.skip(!mplStaged, 'matplotlib wheels not staged in this build');
   test.setTimeout(240_000);

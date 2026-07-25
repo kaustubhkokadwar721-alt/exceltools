@@ -95,6 +95,34 @@ describe('ipynb round-trip', () => {
     expect(fromIpynb(foreign)[0].error).toBe('[0;31mNameError[0m: x'.replace(/\[[0-9;]*m/g, ''));
   });
 
+  it('round-trips folded code and folded results in the fields Jupyter uses', () => {
+    const cells: NotebookCell[] = [
+      { kind: 'code', source: 'x = 1', sourceHidden: true, outputsHidden: true, elapsedMs: 412.7 },
+      { kind: 'markdown', source: '# note', sourceHidden: true },
+    ];
+    const nb = JSON.parse(toIpynb(cells));
+    expect(nb.cells[0].metadata).toMatchObject({ jupyter: { source_hidden: true }, collapsed: true });
+    expect(nb.cells[1].metadata.jupyter.source_hidden).toBe(true);
+
+    const back = fromIpynb(toIpynb(cells));
+    expect(back[0]).toMatchObject({ sourceHidden: true, outputsHidden: true, elapsedMs: 413 });
+    expect(back[1].sourceHidden).toBe(true);
+  });
+
+  it('leaves metadata clean when nothing is folded', () => {
+    const nb = JSON.parse(toIpynb([{ kind: 'code', source: 'x' }]));
+    expect(nb.cells[0].metadata).toEqual({});
+    expect(fromIpynb(toIpynb([{ kind: 'code', source: 'x' }]))[0].sourceHidden).toBeUndefined();
+  });
+
+  it('honours folded state set by real Jupyter', () => {
+    const foreign = JSON.stringify({
+      nbformat: 4,
+      cells: [{ cell_type: 'code', source: ['x'], metadata: { collapsed: true, jupyter: { source_hidden: true } } }],
+    });
+    expect(fromIpynb(foreign)[0]).toMatchObject({ sourceHidden: true, outputsHidden: true });
+  });
+
   it('rejects non-notebook JSON', () => {
     expect(() => fromIpynb('{"foo": 1}')).toThrow();
   });

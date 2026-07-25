@@ -14,6 +14,8 @@ import { toast } from '../ui/toast';
 import { attachHelp } from '../ui/help';
 import { el, button } from '../ui/controls';
 import { createCodeEditor, type CodeEditor } from '../ui/codeeditor';
+import { setHeadCompact, createSourceBar } from '../ui/toolchrome';
+import { tableActions, imageActions } from '../ui/resultactions';
 import { tableSetupCard, type SourceSetup } from '../ui/source-setup';
 import { parseFile } from '../core/parser';
 import { resolveSource } from '../core/source';
@@ -46,6 +48,7 @@ interface CellView {
   body: HTMLElement;
   out: HTMLElement;
   runBtn?: HTMLButtonElement;
+  foldBtn?: HTMLButtonElement;
   editor?: CodeEditor;
 }
 
@@ -108,15 +111,7 @@ export function mountPython(host: HTMLElement): void {
     </div>`;
 
   attachHelp(host, 'python');
-  q('#dz').append(
-    createDropzone({
-      multiple: true,
-      onError: (m) => toast(m, 'error'),
-      onWarning: (m) => toast(m, 'warning', 7000),
-      onFiles: (files) => addFiles(files),
-    }),
-  );
-
+  renderDropzone(true);
   renderToolbar();
   renderAllCells();
   renderRail();
@@ -124,6 +119,36 @@ export function mountPython(host: HTMLElement): void {
 }
 
 // ---- staging (same flow as Query) ------------------------------------------
+
+/**
+ * The drop area is onboarding. Once tables are registered it shrinks to a line
+ * that says what is loaded, giving ~200px back to the notebook — with "Add more
+ * files" to bring it back. Same for the heading block.
+ */
+function renderDropzone(expanded: boolean): void {
+  const host = q('#dz');
+  host.innerHTML = '';
+  if (expanded || !state.registered.length) {
+    host.append(
+      createDropzone({
+        multiple: true,
+        onError: (m) => toast(m, 'error'),
+        onWarning: (m) => toast(m, 'warning', 7000),
+        onFiles: (files) => addFiles(files),
+      }),
+    );
+    return;
+  }
+  const named = (r: Registered): string => (state.engine?.pandas === false ? r.name : `df_${r.name}`);
+  host.append(
+    createSourceBar({
+      summary: `${state.registered.length} table${state.registered.length === 1 ? '' : 's'} ready`,
+      items: state.registered.map((r) => ({ name: named(r), meta: `${r.sheet.totalRows.toLocaleString()} rows` })),
+      addLabel: '＋ Add more files',
+      onAdd: () => renderDropzone(true),
+    }),
+  );
+}
 
 async function addFiles(files: File[]): Promise<void> {
   const setupHost = q('#setup');
@@ -188,7 +213,11 @@ function renderSetup(): void {
       renderSetup();
       renderRail();
       renderToolbar();
+      refreshPlaceholders();
       updateEmptyState();
+      // You are working now — the onboarding chrome gets out of the way.
+      renderDropzone(false);
+      setHeadCompact(root(), true);
       toast(`${state.registered.length} table(s) ready to use.`, 'success', 3000);
     } catch (e) {
       host.innerHTML = '';
@@ -280,6 +309,29 @@ function renderRail(): void {
     ]),
   );
 
+  // A wide table has fifty columns; scanning them by eye is not a plan.
+  const totalCols = state.registered.reduce((n, r) => n + r.sheet.headers.length, 0);
+  if (totalCols > 12) {
+    const filter = el('input', {
+      class: 'field-input rail-filter',
+      type: 'search',
+      placeholder: `Find a column (${totalCols})`,
+      'aria-label': 'Filter columns',
+    }) as HTMLInputElement;
+    filter.addEventListener('input', () => {
+      const term = filter.value.trim().toLowerCase();
+      for (const col of host.querySelectorAll<HTMLElement>('.schema-col')) {
+        col.hidden = !!term && !(col.dataset.name ?? '').includes(term);
+      }
+      for (const block of host.querySelectorAll<HTMLDetailsElement>('.schema-block')) {
+        const hits = block.querySelectorAll('.schema-col:not([hidden])').length;
+        block.hidden = !!term && hits === 0;
+        if (term) block.open = true;
+      }
+    });
+    host.append(filter);
+  }
+
   const list = el('div', { class: 'schema-detail' });
   for (const r of state.registered) {
     list.append(
@@ -290,7 +342,7 @@ function renderRail(): void {
         ]),
         el('div', { class: 'schema-cols-list' },
           r.sheet.headers.map((h, i) => {
-            const col = el('div', { class: 'schema-col', title: `Insert "${h}" into the cell you are editing` }, [
+            const col = el('div', { class: 'schema-col', 'data-name': h.toLowerCase(), title: `Insert "${h}" into the cell you are editing` }, [
               el('span', { class: 'schema-col-name' }, [h]),
               el('span', { class: 'schema-col-type' }, [inferColumnKind(r.sheet, i)]),
             ]);
@@ -349,15 +401,20 @@ function renderToolbar(): void {
   const recipesBtn = button('✚ Insert a step', () => toggleRecipes(), 'btn-ghost');
   recipesBtn.title = 'Common tasks, written out with your own column names';
 
+  // Grouped by what they do — run, build, file — so eight controls read as
+  // three decisions rather than a row of equal-weight buttons.
+  const divider = (): HTMLElement => el('span', { class: 'nb-tb-div', 'aria-hidden': 'true' });
   const toolbar = el('div', { class: 'nb-toolbar' }, [
     runAllBtn,
     stopBtn,
+    divider(),
     recipesBtn,
     button('＋ Code', () => insertCell('code'), 'btn-ghost'),
     button('＋ Note', () => insertCell('markdown'), 'btn-ghost'),
+    divider(),
+    button('Clear results', () => clearResults(), 'btn-ghost'),
     button('Save', () => saveIpynb(), 'btn-ghost'),
     button('Open', () => void openIpynb(), 'btn-ghost'),
-    el('span', { class: 'nb-badge', id: 'nb-engine' }, [engineLabel()]),
   ]);
 
   // The rest of the suite writes nothing to disk; the draft does, so it is
@@ -388,7 +445,14 @@ function renderToolbar(): void {
     ]),
   ]);
 
-  host.append(toolbar, el('div', { class: 'nb-toolbar-foot' }, [keys, draftToggle]));
+  host.append(
+    toolbar,
+    el('div', { class: 'nb-toolbar-foot' }, [
+      keys,
+      el('span', { class: 'nb-badge', id: 'nb-engine' }, [engineLabel()]),
+      draftToggle,
+    ]),
+  );
 }
 
 function engineLabel(): string {
@@ -434,6 +498,14 @@ function buildCell(cell: UICell): HTMLElement {
   const view: CellView = { root: rootEl, gutter, body, out };
   cell.view = view;
 
+  const fold = button('', () => {
+    cell.sourceHidden = !cell.sourceHidden;
+    fillBody(cell);
+    refreshGutter(cell);
+    scheduleSave();
+  }, 'nb-fold');
+  view.foldBtn = fold;
+
   const actions = el('div', { class: 'nb-actions' });
   if (cell.kind === 'code') {
     view.runBtn = button('▶', () => void runOne(cell, 'stay'), 'btn-ghost nb-act nb-run');
@@ -469,6 +541,28 @@ function fillBody(cell: UICell): void {
   const view = cell.view!;
   view.body.querySelector('.ce')?.remove();
   view.body.querySelector('.nb-md')?.remove();
+  view.body.querySelector('.nb-folded')?.remove();
+
+  // Folded code keeps its first line visible, so a long notebook still reads
+  // as a list of steps rather than a column of empty boxes.
+  if (cell.sourceHidden) {
+    const lines = cell.source.split('\n');
+    const first = lines.find((l) => l.trim()) ?? '(empty)';
+    const preview = el('button', { class: 'nb-folded', type: 'button', title: 'Show the code' }, [
+      el('code', {}, [first.trim().slice(0, 90) + (first.trim().length > 90 ? '…' : '')]),
+      el('span', { class: 'nb-folded-meta' }, [`${lines.length} line${lines.length === 1 ? '' : 's'} hidden`]),
+    ]);
+    preview.addEventListener('click', () => {
+      cell.sourceHidden = false;
+      fillBody(cell);
+      refreshGutter(cell);
+      cell.view?.editor?.focus();
+      scheduleSave();
+    });
+    view.body.prepend(preview);
+    view.editor = undefined;
+    return;
+  }
 
   if (cell.kind === 'markdown' && !cell.mdEditing) {
     const md = el('div', { class: 'nb-md' });
@@ -488,12 +582,7 @@ function fillBody(cell: UICell): void {
   const editor = createCodeEditor({
     value: cell.source,
     mode: cell.kind === 'code' ? 'python' : 'text',
-    placeholder:
-      cell.kind === 'code'
-        ? state.registered.length
-          ? `Python — try Insert a step above, or df_${state.registered[0].name}.head()`
-          : 'Python — or add a spreadsheet above to work with your own data'
-        : 'A note for whoever reads this later (markdown works)',
+    placeholder: cell.kind === 'code' ? codePlaceholder() : 'A note for whoever reads this later (markdown works)',
     onChange: (v) => {
       cell.source = v;
       scheduleSave();
@@ -509,6 +598,21 @@ function fillBody(cell: UICell): void {
   view.body.prepend(editor.el);
 }
 
+function codePlaceholder(): string {
+  const first = state.registered[0];
+  if (!first) return 'Python — or add a spreadsheet above to work with your own data';
+  const name = state.engine?.pandas === false ? `tables["${first.name}"]` : `df_${first.name}.head()`;
+  return `Python — try Insert a step above, or ${name}`;
+}
+
+/** Registering changes what the hint should say, so refresh the empty cells. */
+function refreshPlaceholders(): void {
+  const hint = codePlaceholder();
+  for (const cell of state.cells) {
+    if (cell.kind === 'code' && cell.view?.editor) cell.view.editor.textarea.placeholder = hint;
+  }
+}
+
 function finishMarkdown(cell: UICell): void {
   cell.mdEditing = false;
   fillBody(cell);
@@ -522,7 +626,16 @@ function refreshGutter(cell: UICell): void {
   view.gutter.innerHTML = '';
   const label = cell.kind !== 'code' ? 'note' : cell.running ? '[*]' : `[${cell.execCount ?? ' '}]`;
   view.gutter.append(el('span', { class: 'nb-count' }, [label]));
+  if (view.foldBtn) {
+    view.foldBtn.textContent = cell.sourceHidden ? '▸' : '▾';
+    view.foldBtn.title = cell.sourceHidden ? 'Show the code' : 'Hide the code';
+    view.gutter.append(view.foldBtn);
+  }
+
+  // One glance should say what happened here: running, done, or broken.
   view.root.classList.toggle('is-running', !!cell.running);
+  view.root.classList.toggle('is-error', !cell.running && !!cell.error);
+  view.root.classList.toggle('is-ok', !cell.running && !cell.error && cell.execCount !== undefined);
   if (view.runBtn) view.runBtn.disabled = !!cell.running;
 }
 
@@ -596,30 +709,80 @@ function insertAtCursor(text: string): void {
 
 // ---- outputs and errors -----------------------------------------------------
 
+/** One labelled, colour-coded result. The label says what it is; the actions
+ *  say what you can do with it. */
+function outBlock(kind: string, label: string, meta: string, body: Node, actions?: HTMLElement): HTMLElement {
+  const head = el('div', { class: 'out-label' }, [
+    el('span', { class: 'out-label-kind' }, [label]),
+    ...(meta ? [el('span', { class: 'out-label-meta' }, [meta])] : []),
+  ]);
+  if (actions) head.append(actions);
+  return el('section', { class: `out-block out-${kind}` }, [head, body]);
+}
+
 function refreshOutput(cell: UICell): void {
   const host = cell.view!.out;
   host.innerHTML = '';
   if (cell.kind !== 'code') return;
 
-  if (cell.stdout) host.append(el('pre', { class: 'nb-stdout' }, [cell.stdout]));
+  const blocks: HTMLElement[] = [];
 
-  for (const o of cell.outputs ?? []) {
+  if (cell.stdout) {
+    blocks.push(outBlock('stdout', 'Printed', '', el('pre', { class: 'nb-stdout' }, [cell.stdout])));
+  }
+
+  (cell.outputs ?? []).forEach((o, i) => {
     if (o.type === 'table') {
       const rows = o.rows.slice(0, PREVIEW_ROWS);
-      host.append(createDataGrid({ name: 'Result', headers: o.headers, rows, totalRows: o.rows.length }));
+      const sheet = { name: 'Result', headers: o.headers, rows: o.rows, totalRows: o.rows.length };
+      const grid = createDataGrid({ name: 'Result', headers: o.headers, rows, totalRows: o.rows.length });
+      const body = el('div', {}, [grid]);
       if (o.rows.length > PREVIEW_ROWS) {
-        host.append(el('div', { class: 'sheet-meta' }, [`showing the first ${PREVIEW_ROWS.toLocaleString()} of ${o.rows.length.toLocaleString()} rows`]));
+        body.append(el('div', { class: 'sheet-meta' }, [
+          `showing the first ${PREVIEW_ROWS.toLocaleString()} rows — an export contains all ${o.rows.length.toLocaleString()}`,
+        ]));
       }
+      const meta = `${o.rows.length.toLocaleString()} row${o.rows.length === 1 ? '' : 's'} × ${o.headers.length} column${o.headers.length === 1 ? '' : 's'}`;
+      blocks.push(outBlock('table', 'Table', meta, body, tableActions(sheet, resultFileName(cell, i))));
     } else if (o.type === 'image') {
       const img = el('img', { class: 'nb-img', alt: 'Chart produced by this cell' }) as HTMLImageElement;
       img.src = 'data:image/png;base64,' + o.png;
-      host.append(img);
+      blocks.push(outBlock('image', 'Chart', '', img, imageActions(o.png, resultFileName(cell, i))));
     } else {
-      host.append(el('pre', { class: 'nb-repr' }, [o.text]));
+      blocks.push(outBlock('value', 'Value', '', el('pre', { class: 'nb-repr' }, [o.text])));
     }
+  });
+
+  if (blocks.length) {
+    const body = el('div', { class: 'out-body' }, blocks);
+    const foldBtn = button(cell.outputsHidden ? '▸' : '▾', () => {
+      cell.outputsHidden = !cell.outputsHidden;
+      refreshOutput(cell);
+      scheduleSave();
+    }, 'nb-fold out-fold');
+    foldBtn.title = cell.outputsHidden ? 'Show the results' : 'Hide the results';
+    const summary = cell.outputsHidden ? `${blocks.length} result${blocks.length === 1 ? '' : 's'} hidden` : '';
+    const head = el('div', { class: 'out-head' }, [
+      foldBtn,
+      el('span', { class: 'out-head-label' }, ['Results']),
+      el('span', { class: 'out-head-meta' }, [summary || (cell.elapsedMs !== undefined ? formatElapsed(cell.elapsedMs) : '')]),
+    ]);
+    host.append(head);
+    if (!cell.outputsHidden) host.append(body);
   }
 
+  // Errors sit outside the fold — the one thing that must never be hidden.
   if (cell.error) host.append(errorEl(cell.error));
+}
+
+/** A filename that says which step produced it: notebook-step-3-result.xlsx */
+function resultFileName(cell: UICell, index: number): string {
+  const step = cell.execCount ?? state.cells.indexOf(cell) + 1;
+  return `notebook-step-${step}${index ? `-${index + 1}` : ''}-result`;
+}
+
+function formatElapsed(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
 /** The traceback, translated. The original is always one click away. */
@@ -690,6 +853,9 @@ async function runOne(cell: UICell, then: 'stay' | 'advance' | 'insert'): Promis
   cell.stdout = res.stdout || undefined;
   cell.outputs = res.outputs.length ? res.outputs : undefined;
   cell.error = res.ok ? undefined : res.error;
+  cell.elapsedMs = res.elapsedMs;
+  // A fresh result is worth seeing, even if the last one was folded away.
+  if (cell.outputs?.length || cell.stdout) cell.outputsHidden = false;
   refreshGutter(cell);
   refreshOutput(cell);
   setEngineLabel();
@@ -704,6 +870,24 @@ async function runOne(cell: UICell, then: 'stay' | 'advance' | 'insert'): Promis
     else insertCell('code', cell);
   }
   return res.ok;
+}
+
+/** Strip every result, so a notebook can be shared or saved as steps only. */
+function clearResults(): void {
+  let cleared = 0;
+  for (const cell of state.cells) {
+    if (cell.stdout || cell.outputs || cell.error || cell.execCount !== undefined) cleared++;
+    cell.stdout = undefined;
+    cell.outputs = undefined;
+    cell.error = undefined;
+    cell.execCount = undefined;
+    cell.elapsedMs = undefined;
+    refreshGutter(cell);
+    refreshOutput(cell);
+  }
+  state.execSeq = 1;
+  scheduleSave();
+  toast(cleared ? `Cleared the results of ${cleared} cell(s). Your code is untouched.` : 'There were no results to clear.', 'success', 4000);
 }
 
 async function runAll(): Promise<void> {

@@ -83,6 +83,22 @@ describe('snippetsFor', () => {
     expect(snippetsFor(withIds).find((s) => s.id === 'total-by')!.label).toBe('Total Amount by Dept');
   });
 
+  it('never offers to total a date, which Excel hands over as a number', () => {
+    const dates = ctx({
+      tables: [
+        {
+          name: 'returns',
+          columns: [
+            { name: 'PeriodDate', kind: 'number' },
+            { name: 'ReturnType', kind: 'text' },
+            { name: 'PrimaryAmount', kind: 'number' },
+          ],
+        },
+      ],
+    });
+    expect(snippetsFor(dates).find((s) => s.id === 'total-by')!.label).toBe('Total PrimaryAmount by ReturnType');
+  });
+
   it('falls back to an identifier column only when nothing else is numeric', () => {
     const idsOnly = ctx({
       tables: [{ name: 't', columns: [{ name: 'Dept', kind: 'text' }, { name: 'Ref No', kind: 'number' }] }],

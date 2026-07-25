@@ -7,7 +7,7 @@ PWA. Built for accountants and finance teams, not engineers.
 
 > **Status:** Phases 0–4 complete; Phase 5 hardening mostly done (tests, CI,
 > security, performance, fidelity — only the real-PC pilot remains). Nine tools
-> live, plus native Excel Table import. 80 unit + 24 E2E tests in CI.
+> live, plus native Excel Table import. 88 unit + 29 E2E tests in CI.
 > See [`docs/`](docs/).
 
 ## Live app
@@ -75,15 +75,34 @@ accountant can actually use it.
   tables (`text/html` plus a lossless ExcelTools mime) and charts
   (`image/png`), so reopening one shows the results without re-running — and it
   still opens in real Jupyter.
+- **Results go back to Excel.** Every table result carries **Copy** (pastes
+  into a spreadsheet as cells, not one blob), **CSV** and **Excel**; charts
+  carry **Save image**. A result you can see but can't take anywhere gets
+  retyped, and retyping is where errors come from.
+- **Results are tables, not `repr`.** A plain Python list of dicts, list of
+  rows, or a dict of totals renders as a grid with exports — you don't need
+  pandas to get a readable answer.
+- **The chrome gets out of the way.** Once tables are registered, the drop
+  area shrinks to a one-line summary of what's loaded and the heading goes
+  compact — about 250px of screen back, reversible with *Add more files*.
+- **Fold anything.** Collapse a cell's code (its first line stays as a label)
+  or its results; the state round-trips through the same `.ipynb` fields
+  Jupyter uses. Errors are never folded away.
 - **Crash recovery.** Work is kept in this browser as you type, and offered
   back if the tab dies. Nothing leaves the device.
 - **A Stop button that works**, implemented honestly: it restarts the engine and
   re-registers your tables, and tells you the variables are gone.
 - **Click a column name** in the right-hand list to drop its exact spelling into
   your code — no transcribing headings with trailing spaces.
-- **In memory** tab shows every table and value Python is holding.
+- **In memory** tab shows every table and value Python is holding; the column
+  list filters when a table is wide.
+- Colour is semantic and always paired with text: a cell's left stripe is green
+  when it ran, amber while running, red when it failed; results are labelled
+  and tinted by type (printed, table, chart, error).
 - Syntax highlighting, auto-indent, bracket closing, comment toggling and
   Jupyter's keyboard shortcuts, in ~200 lines and **zero new dependencies**.
+- The toolbar stays pinned while you scroll, so **Stop** is always reachable,
+  and **Clear results** strips every output before you share the file.
 
 Why not embed JupyterLite (official, Pyodide-based, also static files)? It
 can't see your workbook — it owns its own kernel behind its own virtual
@@ -109,7 +128,7 @@ Two-tier engine strategy — match the engine to the tool:
 - All spreadsheet parsing runs in a **Web Worker** — the UI never freezes.
 - Each tool is a lazily-loaded chunk; the ~40 MB DuckDB engine is excluded from
   the PWA precache and runtime-cached on first Query/Pivot use, so light-tool
-  users never download it (precache is ~750 KiB — app code, styles and fonts).
+  users never download it (precache is ~760 KiB — app code, styles and fonts).
 - **Native Excel Tables** are extracted directly from the xlsx zip
   (`src/core/tables.ts`) since SheetJS doesn't surface them; tables register into
   DuckDB with exact per-column types via a typed-CSV load
@@ -122,10 +141,10 @@ Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
 
 ## Quality
 
-- **80 unit tests** (Vitest) over the pure modules — transform, validation, zip,
+- **88 unit tests** (Vitest) over the pure modules — transform, validation, zip,
   tables, source, plus the notebook's `.ipynb` round-trip (results included),
   error translation, recipe generation, draft storage and syntax highlighting —
-  and **24 E2E tests** (Playwright): one per tool, Excel-Table import, staged
+  and **29 E2E tests** (Playwright): one per tool, Excel-Table import, staged
   rename + schema, a **no-external-requests privacy guard**, and the notebook's
   save/reopen, recovery, recipes and plain-English errors.
 - CI (`.github/workflows/test.yml`) runs typecheck + unit + E2E on every PR and
@@ -142,8 +161,8 @@ npm install
 npm run dev        # dev server
 npm run build      # → dist/ (static, self-contained)
 npm run preview    # serve dist/ locally; test PWA + offline in DevTools
-npm run test       # 34 unit tests (Vitest)
-npm run test:e2e   # 12 E2E tests (Playwright, against the production build)
+npm run test       # 88 unit tests (Vitest)
+npm run test:e2e   # 29 E2E tests (Playwright, against the production build)
 npm run package    # → exceltools-offline.zip (offline distributable)
 npm run typecheck
 ```

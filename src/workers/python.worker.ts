@@ -38,6 +38,14 @@ import ast, json, traceback
 _g = globals()
 tables = {}
 
+def _xt_cell(v):
+    """JSON-safe scalar. NaN/Infinity are not valid JSON, so they read as blank."""
+    if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+        return None
+    if v is None or isinstance(v, (bool, int, float, str)):
+        return v
+    return repr(v)
+
 def _xt_to_table(r):
     try:
         import pandas as pd
@@ -49,6 +57,31 @@ def _xt_to_table(r):
             return {"type": "table", "headers": [str(c) for c in d.columns], "rows": rows}
     except ImportError:
         pass
+    # Plain Python shapes that are really tables. Without this, a result like
+    # [{"Dept": "Fin", "Total": 1650}, ...] prints as one long line of repr —
+    # unreadable, and impossible to export to a spreadsheet.
+    if isinstance(r, (list, tuple)) and r:
+        if all(isinstance(x, dict) for x in r):
+            headers = []
+            for x in r:
+                for k in x.keys():
+                    if k not in headers:
+                        headers.append(k)
+            return {
+                "type": "table",
+                "headers": [str(h) for h in headers],
+                "rows": [[_xt_cell(x.get(h)) for h in headers] for x in r],
+            }
+        if all(isinstance(x, (list, tuple)) for x in r) and len(set(len(x) for x in r)) == 1:
+            return {
+                "type": "table",
+                "headers": ["Column %d" % (i + 1) for i in range(len(r[0]))],
+                "rows": [[_xt_cell(v) for v in x] for x in r],
+            }
+        if len(r) > 10 and all(not isinstance(x, (list, tuple, dict, set)) for x in r):
+            return {"type": "table", "headers": ["Value"], "rows": [[_xt_cell(v)] for v in r]}
+    if isinstance(r, dict) and r and all(not isinstance(v, (list, tuple, dict, set)) for v in r.values()):
+        return {"type": "table", "headers": ["Key", "Value"], "rows": [[str(k), _xt_cell(v)] for k, v in r.items()]}
     return None
 
 def _xt_figures():
