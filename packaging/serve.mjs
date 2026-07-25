@@ -15,6 +15,18 @@ const MIME = {
   '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png',
 };
 
+// Security headers, matching serve.py. The app carries its own Content-Security
+// -Policy in a <meta> tag, but frame-ancestors cannot be expressed there — it
+// has to be a real header — so the launcher adds it and a few companions.
+const SECURITY_HEADERS = {
+  'Content-Security-Policy': "frame-ancestors 'none'",
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'Permissions-Policy':
+    'camera=(), microphone=(), geolocation=(), usb=(), serial=(), bluetooth=(), payment=(), interest-cohort=()',
+};
+
 const server = http.createServer(async (req, res) => {
   try {
     let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
@@ -22,7 +34,11 @@ const server = http.createServer(async (req, res) => {
     const abs = normalize(join(dir, p));
     if (!abs.startsWith(dir)) { res.writeHead(403); return res.end(); }
     const body = await readFile(abs);
-    res.writeHead(200, { 'Content-Type': MIME[extname(abs)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+    res.writeHead(200, {
+      'Content-Type': MIME[extname(abs)] || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+      ...SECURITY_HEADERS,
+    });
     res.end(body);
   } catch {
     res.writeHead(404); res.end('Not found');

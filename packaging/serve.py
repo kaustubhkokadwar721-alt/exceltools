@@ -34,8 +34,33 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ".woff2": "font/woff2",
     }
 
+    # Security headers. The app already carries a Content-Security-Policy in its
+    # own <meta> tag, but a few protections can only be set as real headers —
+    # notably frame-ancestors, which a meta tag cannot express. Serving the
+    # offline copy through this launcher is therefore slightly stronger than
+    # serving it from a static host that sets no headers at all.
+    SECURITY_HEADERS = {
+        # Nothing may frame this page: no clickjacking a click onto a control
+        # that exports or clears a user's data.
+        "Content-Security-Policy": "frame-ancestors 'none'",
+        "X-Frame-Options": "DENY",  # for anything that predates frame-ancestors
+        # Never let the browser second-guess a declared type into something
+        # executable.
+        "X-Content-Type-Options": "nosniff",
+        # This app has no outbound requests at all; make the intent explicit.
+        "Referrer-Policy": "no-referrer",
+        # It needs none of these. Denying them is a statement an IT reviewer can
+        # verify in one look.
+        "Permissions-Policy": (
+            "camera=(), microphone=(), geolocation=(), usb=(), serial=(), "
+            "bluetooth=(), payment=(), interest-cohort=()"
+        ),
+    }
+
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
+        for name, value in self.SECURITY_HEADERS.items():
+            self.send_header(name, value)
         super().end_headers()
 
     def log_message(self, *args):

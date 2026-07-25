@@ -8,6 +8,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# This workflow only reads the repo. Stating it explicitly means a compromised
+# dependency or action cannot use the job's token to write to the repository.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -20,6 +25,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # Advisories against runtime dependencies are a release decision, not a
+      # surprise. Reported every run; see docs/SECURITY-PLAN.md for the open one.
+      - run: npm audit --omit=dev || true
+        name: Report dependency advisories (informational)
 
   e2e:
     runs-on: ubuntu-latest

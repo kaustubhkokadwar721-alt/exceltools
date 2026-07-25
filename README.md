@@ -180,6 +180,9 @@ Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
   [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 - Documented format-fidelity boundaries — [`docs/FIDELITY.md`](docs/FIDELITY.md).
 - Security & privacy attestation — [`docs/SECURITY.md`](docs/SECURITY.md).
+- **Full security audit and hardening plan** —
+  [`docs/SECURITY-PLAN.md`](docs/SECURITY-PLAN.md): threat model, every finding
+  with a severity, what was fixed, and what is still open.
 - **Approval pack for a reviewing partner and an IT administrator** —
   [`docs/SECURITY-APPROVAL.md`](docs/SECURITY-APPROVAL.md): plain-English risk
   register, checks anyone can run in fifteen minutes without reading code, and a

@@ -345,11 +345,13 @@ a substantial change and should not be decided casually.
 | Reviewed | 25 July 2026 |
 | Tests at review | 106 unit, 39 end-to-end, all passing |
 | Open issues | 1 (§5) |
-| Fixed while preparing this pack | 3 HTML-injection defects (§C3) |
+| Fixed while preparing this pack | 3 HTML-injection defects (§C3); unverified build-time downloads; CI token scope; missing security headers on the offline launcher — see `SECURITY-PLAN.md` |
 | Not independently validated | numerical correctness vs Excel (§A4) |
 
 Record the exact commit used for any engagement. The claims in this pack apply to that
 commit, not to "ExcelTools" in general.
 
-Related: [`SECURITY.md`](SECURITY.md) (technical attestation), [`FIDELITY.md`](FIDELITY.md)
+Related: [`SECURITY-PLAN.md`](SECURITY-PLAN.md) (the full audit behind this pack:
+threat model, every finding, and the phased remediation plan),
+[`SECURITY.md`](SECURITY.md) (technical attestation), [`FIDELITY.md`](FIDELITY.md)
 (where output deliberately differs from Excel), [`DEPLOYMENT.md`](DEPLOYMENT.md).
