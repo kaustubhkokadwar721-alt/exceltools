@@ -41,6 +41,9 @@ async function gotoTool(page: Page, id: 'python' | 'convert'): Promise<void> {
   await page.waitForSelector(id === 'python' ? '.nb-toolbar' : '.dropzone', { state: 'visible' });
 }
 
+/** Result grids group digits in the viewer's locale, which CI need not share. */
+const num = (n: number): string => new Intl.NumberFormat(undefined).format(n);
+
 const runCell = (page: Page, idx: number) => page.locator('.nb-cell').nth(idx).locator('.nb-run').click();
 
 test('notebook: cells share state, stdout + repr + table outputs render', async ({ page }) => {
@@ -61,7 +64,7 @@ test('notebook: cells share state, stdout + repr + table outputs render', async 
   await runCell(page, 1);
   // A list of dicts renders as a grid, with the figure grouped for reading.
   await expect(page.locator('.nb-cell').nth(1).locator('.nb-out-host')).toContainText(
-    new Intl.NumberFormat(undefined).format(9300),
+    num(9300),
     { timeout: 30_000 },
   );
 });
@@ -110,9 +113,9 @@ test('notebook: recipes insert runnable code using the real column names', async
     await page.waitForSelector('.nb-out-host .grid-row', { timeout: 90_000 });
     const rows = await gridRows(page, '.nb-out-host');
     expect(rows.map((r) => [r[1], r[2]])).toEqual([
-      ['Fin', '1,650'],
-      ['IT', '1,550'],
-      ['Ops', '1,450'],
+      ['Fin', num(1650)],
+      ['IT', num(1550)],
+      ['Ops', num(1450)],
     ]);
   } else {
     const card = page.locator('.nb-recipe', { hasText: 'See the first few rows' });
@@ -160,9 +163,7 @@ test('notebook: a plain list of dicts is shown as a table, with figures aligned'
   await page.waitForSelector('.out-table .grid-row', { timeout: 90_000 });
 
   // Grouped for reading; the export still carries the raw number.
-  await expect(page.locator('.out-table .grid-num').first()).toHaveText(
-    new Intl.NumberFormat(undefined).format(1643552),
-  );
+  await expect(page.locator('.out-table .grid-num').first()).toHaveText(num(1643552));
   await expect(page.locator('.out-table .out-label-meta')).toContainText('2 rows × 2 columns');
 });
 
@@ -258,9 +259,9 @@ test('notebook: a saved table result reopens as a grid, and as HTML in Jupyter',
   await page.waitForSelector('.nb-out-host .grid-row');
   const rows = await gridRows(page, '.nb-out-host');
   expect(rows.map((r) => [r[1], r[2]])).toEqual([
-    ['Fin', '1650'],
-    ['IT', '1550'],
-    ['Ops', '1450'],
+    ['Fin', num(1650)],
+    ['IT', num(1550)],
+    ['Ops', num(1450)],
   ]);
 });
 
