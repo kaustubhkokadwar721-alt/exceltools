@@ -17,15 +17,15 @@ import { createCodeEditor, type CodeEditor } from '../ui/codeeditor';
 import { setHeadCompact, createSourceBar } from '../ui/toolchrome';
 import { tableActions, imageActions } from '../ui/resultactions';
 import { tableSetupCard, type SourceSetup } from '../ui/source-setup';
-import { parseFile } from '../core/parser';
+import { parseFile, serializeWorkbook } from '../core/parser';
 import { resolveSource } from '../core/source';
 import { downloadBlob, pickFiles } from '../core/fileio';
 import { toIpynb, fromIpynb, renderMarkdown, type NotebookCell } from '../core/notebook';
 import { inferColumnKind, schemaTextForAI } from '../core/schema';
 import { explainPythonError } from '../core/pyerrors';
-import { snippetsFor, type Snippet } from '../core/snippets';
+import { snippetsFor, columnChoices, defaultValues, type Snippet } from '../core/snippets';
 import { saveDraft, loadDraft, clearDraft, describeAge, isDraftEnabled, setDraftEnabled } from '../core/nbstore';
-import type { SheetData, TableDef } from '../core/types';
+import type { SheetData, TableDef, ColumnKind } from '../core/types';
 import type { CellResult, EngineInfo, PyVariable } from '../core/python';
 
 const PREVIEW_ROWS = 2000;
@@ -401,9 +401,20 @@ function renderToolbar(): void {
   const recipesBtn = button('✚ Insert a step', () => toggleRecipes(), 'btn-ghost');
   recipesBtn.title = 'Common tasks, written out with your own column names';
 
-  // Grouped by what they do — run, build, file — so eight controls read as
-  // three decisions rather than a row of equal-weight buttons.
+  // Grouped by what they do — run, build, file — so the controls read as three
+  // decisions rather than a row of equal-weight buttons. The file group carries
+  // short labels with full tooltips, because it is the least-used group and was
+  // wrapping the row onto two lines.
   const divider = (): HTMLElement => el('span', { class: 'nb-tb-div', 'aria-hidden': 'true' });
+  const fileBtn = (label: string, title: string, onClick: () => void): HTMLButtonElement => {
+    const b = button(label, onClick, 'btn-ghost');
+    b.title = title;
+    return b;
+  };
+  const exportBtn = fileBtn('Export', 'Download every table result as one Excel workbook', () => void exportWorkbook());
+  const clearBtn = fileBtn('Clear', 'Remove every result, keeping the code', () => clearResults());
+  const saveBtn = fileBtn('Save', 'Download this notebook as an .ipynb file, results included', () => saveIpynb());
+  const openBtn = fileBtn('Open', 'Open an .ipynb notebook file', () => void openIpynb());
   const toolbar = el('div', { class: 'nb-toolbar' }, [
     runAllBtn,
     stopBtn,
@@ -412,9 +423,10 @@ function renderToolbar(): void {
     button('＋ Code', () => insertCell('code'), 'btn-ghost'),
     button('＋ Note', () => insertCell('markdown'), 'btn-ghost'),
     divider(),
-    button('Clear results', () => clearResults(), 'btn-ghost'),
-    button('Save', () => saveIpynb(), 'btn-ghost'),
-    button('Open', () => void openIpynb(), 'btn-ghost'),
+    exportBtn,
+    clearBtn,
+    saveBtn,
+    openBtn,
   ]);
 
   // The rest of the suite writes nothing to disk; the draft does, so it is
@@ -528,7 +540,15 @@ function buildCell(cell: UICell): HTMLElement {
   del.title = 'Delete this cell';
   actions.append(up, down, del);
 
-  rootEl.append(gutter, body, actions);
+  // Adding a step in the middle used to mean "add at the end, then press ↑
+  // four times". This strip appears in the gap under each cell on hover.
+  const insertHere = el('div', { class: 'nb-insert' }, [
+    button('＋ Code', () => insertCell('code', cell), 'nb-insert-btn'),
+    button('＋ Note', () => insertCell('markdown', cell), 'nb-insert-btn'),
+    button('⧉ Duplicate', () => insertCell(cell.kind, cell, cell.source), 'nb-insert-btn'),
+  ]);
+
+  rootEl.append(gutter, body, actions, insertHere);
   body.append(out);
   fillBody(cell);
   refreshGutter(cell);
@@ -667,15 +687,44 @@ function moveCell(cell: UICell, dir: -1 | 1): void {
   scheduleSave();
 }
 
+/**
+ * Delete, with a way back. A deleted cell is minutes of thinking, and there is
+ * no other undo for it — so the gap it leaves offers to put it back before it
+ * quietly disappears.
+ */
 function deleteCell(cell: UICell): void {
   const idx = state.cells.indexOf(cell);
   if (idx < 0) return;
+  const node = cell.view!.root;
+  const list = cellList();
+  const wasEmpty = !cell.source.trim();
   state.cells.splice(idx, 1);
-  cell.view?.root.remove();
+
+  if (wasEmpty) {
+    node.remove();
+  } else {
+    const undo = el('div', { class: 'nb-undo' }, [
+      el('span', {}, [`Deleted a ${cell.kind === 'code' ? 'code cell' : 'note'}.`]),
+      button('Undo', () => {
+        const at = Math.min(idx, state.cells.length);
+        state.cells.splice(at, 0, cell);
+        const restored = buildCell(cell); // rebuilds and re-owns cell.view
+        list.insertBefore(restored, undo);
+        undo.remove();
+        restored.querySelector<HTMLTextAreaElement>('.ce-input')?.focus();
+        updateEmptyState();
+        scheduleSave();
+      }, 'btn-ghost'),
+    ]);
+    list.insertBefore(undo, node);
+    node.remove();
+    setTimeout(() => undo.remove(), 15_000);
+  }
+
   if (!state.cells.length) {
     const fresh = newCell('code');
     state.cells.push(fresh);
-    cellList().append(buildCell(fresh));
+    list.append(buildCell(fresh));
   }
   const next = state.cells[Math.min(idx, state.cells.length - 1)];
   next?.view?.editor?.focus();
@@ -735,7 +784,7 @@ function refreshOutput(cell: UICell): void {
     if (o.type === 'table') {
       const rows = o.rows.slice(0, PREVIEW_ROWS);
       const sheet = { name: 'Result', headers: o.headers, rows: o.rows, totalRows: o.rows.length };
-      const grid = createDataGrid({ name: 'Result', headers: o.headers, rows, totalRows: o.rows.length });
+      const grid = createDataGrid({ name: 'Result', headers: o.headers, rows, totalRows: o.rows.length }, { formatNumbers: true });
       const body = el('div', {}, [grid]);
       if (o.rows.length > PREVIEW_ROWS) {
         body.append(el('div', { class: 'sheet-meta' }, [
@@ -841,11 +890,23 @@ async function runOne(cell: UICell, then: 'stay' | 'advance' | 'insert'): Promis
     return false;
   }
 
+  // A long step with no feedback is indistinguishable from a frozen tab, so
+  // count the seconds out loud and say where the way out is.
+  const startedAt = performance.now();
+  const note = el('div', { class: 'nb-running-note' }, ['Running…']);
+  cell.view!.out.prepend(note);
+  const tick = setInterval(() => {
+    const secs = Math.round((performance.now() - startedAt) / 1000);
+    note.textContent = secs < 3 ? 'Running…' : `Running… ${secs}s — Stop is in the toolbar above`;
+  }, 1000);
+
   const pyMod = await import('../core/python');
   let res: CellResult;
   try {
     res = await pyMod.runCell(cell.source);
   } finally {
+    clearInterval(tick);
+    note.remove();
     cell.running = false;
   }
 
@@ -981,25 +1042,87 @@ function renderRecipes(host: HTMLElement, inline: boolean): void {
   for (const [group, items] of groups) {
     host.append(el('div', { class: 'nb-recipe-group' }, [group]));
     const grid = el('div', { class: 'nb-recipe-grid' });
-    for (const s of items) {
-      const card = el('button', { class: 'nb-recipe', type: 'button' }, [
-        el('span', { class: 'nb-recipe-label' }, [s.label]),
-        el('span', { class: 'nb-recipe-blurb' }, [s.blurb]),
-      ]);
-      card.addEventListener('click', () => useRecipe(s));
-      grid.append(card);
-    }
+    for (const s of items) grid.append(recipeCard(s));
     host.append(grid);
   }
 }
 
+/**
+ * One recipe, with its column choices inline: "Total [PrimaryAmount ▾] by
+ * [Status ▾]". Changing a dropdown is the thing users want to do next, and it
+ * has to be possible without editing Python.
+ */
+function recipeCard(s: Snippet): HTMLElement {
+  const ctx = recipeContext();
+  const values = defaultValues(s);
+  const selects = new Map<string, HTMLSelectElement>();
+
+  const makeSelect = (p: (typeof s.params)[number]): HTMLSelectElement => {
+    const sel = el('select', { class: 'recipe-pick', 'aria-label': p.label }) as HTMLSelectElement;
+    fillSelect(sel, p, values, ctx);
+    sel.addEventListener('change', () => {
+      values[p.id] = sel.value;
+      // Changing the table changes which columns exist, so re-offer them.
+      if (p.kind === 'table') {
+        for (const other of s.params) {
+          if (other.kind !== 'column' || (other.from ?? 'table') !== p.id) continue;
+          const dependent = selects.get(other.id);
+          if (dependent) {
+            fillSelect(dependent, other, values, recipeContext());
+            values[other.id] = dependent.value;
+          }
+        }
+      }
+    });
+    selects.set(p.id, sel);
+    return sel;
+  };
+
+  // Split the template so the dropdowns sit inside the sentence.
+  const title = el('span', { class: 'nb-recipe-label' });
+  for (const part of s.template.split(/(\{\w+\})/)) {
+    const match = part.match(/^\{(\w+)\}$/);
+    const param = match && s.params.find((p) => p.id === match[1]);
+    if (param) title.append(makeSelect(param));
+    else if (part) title.append(document.createTextNode(part));
+  }
+
+  const insert = button('Insert', () => useRecipe(s, { ...values }), 'btn recipe-insert');
+  insert.title = 'Add this step to the notebook and run it';
+
+  return el('div', { class: 'nb-recipe' }, [
+    title,
+    el('span', { class: 'nb-recipe-blurb' }, [s.blurb]),
+    insert,
+  ]);
+}
+
+function fillSelect(
+  sel: HTMLSelectElement,
+  p: { id: string; kind: 'table' | 'column'; kinds?: ColumnKind[]; from?: string; default: string },
+  values: Record<string, string>,
+  ctx: ReturnType<typeof recipeContext>,
+): void {
+  sel.innerHTML = '';
+  const options =
+    p.kind === 'table'
+      ? ctx.tables.map((t) => t.name)
+      : columnChoices(ctx, values[p.from ?? 'table'] ?? ctx.tables[0]?.name ?? '', p.kinds).map((c) => c.name);
+  for (const name of options) sel.append(el('option', { value: name }, [name]));
+  const wanted = options.includes(values[p.id]) ? values[p.id] : (options.includes(p.default) ? p.default : options[0]);
+  sel.value = wanted ?? '';
+  // A single choice is not a choice — show it as plain text.
+  sel.classList.toggle('is-fixed', options.length < 2);
+}
+
 /** Put a recipe into the first empty cell, or a new one after the last cell. */
-function useRecipe(s: Snippet): void {
+function useRecipe(s: Snippet, values: Record<string, string>): void {
   q('#recipes').hidden = true;
+  const code = s.build(values, recipeContext());
   const empty = state.cells.find((c) => c.kind === 'code' && !c.source.trim());
   const cell = empty ?? insertCell('code');
-  cell.source = s.code;
-  cell.view?.editor?.setValue(s.code);
+  cell.source = code;
+  cell.view?.editor?.setValue(code);
   cell.view?.editor?.focus();
   cell.view?.root.scrollIntoView({ block: 'nearest' });
   updateEmptyState();
@@ -1038,10 +1161,50 @@ function asNotebookCells(): NotebookCell[] {
   }));
 }
 
+/** A filename someone can find again: the data it came from, plus the date. */
+function baseFileName(): string {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const source = state.registered[0]?.name;
+  return `${source ? source.slice(0, 40) : 'notebook'}-${stamp}`;
+}
+
 function saveIpynb(): void {
   const blob = new Blob([toIpynb(asNotebookCells())], { type: 'application/x-ipynb+json' });
-  downloadBlob(blob, 'notebook.ipynb');
+  downloadBlob(blob, `${baseFileName()}.ipynb`);
   toast('Saved — with your results and charts. The file opens in real Jupyter too.', 'success', 5000);
+}
+
+/**
+ * Every table result in the notebook, as one workbook with a sheet per step.
+ * The single-result exports cover "I need this number"; this covers "I need to
+ * hand the whole piece of work to someone", which is what actually gets filed.
+ */
+async function exportWorkbook(): Promise<void> {
+  const sheets: SheetData[] = [];
+  const used = new Set<string>();
+  state.cells.forEach((cell, idx) => {
+    const tables = (cell.outputs ?? []).filter((o) => o.type === 'table');
+    tables.forEach((o, i) => {
+      if (o.type !== 'table') return;
+      // Excel sheet names: 31 chars, no []:*?/\ and no duplicates.
+      let name = `Step ${cell.execCount ?? idx + 1}${tables.length > 1 ? ` (${i + 1})` : ''}`.slice(0, 31);
+      for (let n = 2; used.has(name); n++) name = `${name.slice(0, 28)} ${n}`;
+      used.add(name);
+      sheets.push({ name, headers: o.headers, rows: o.rows, totalRows: o.rows.length });
+    });
+  });
+
+  if (!sheets.length) {
+    toast('No table results to export yet — run a step that produces a table first.', 'warning', 6000);
+    return;
+  }
+  try {
+    const { blob, ext } = await serializeWorkbook(sheets);
+    downloadBlob(blob, `${baseFileName()}-results.${ext}`);
+    toast(`Exported ${sheets.length} result${sheets.length === 1 ? '' : 's'}, one sheet each.`, 'success', 5000);
+  } catch (e) {
+    toast(`Could not build the workbook: ${msg(e)}`, 'error', 8000);
+  }
 }
 
 async function openIpynb(): Promise<void> {

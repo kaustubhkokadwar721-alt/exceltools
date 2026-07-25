@@ -56,19 +56,23 @@ test('notebook: cells share state, stdout + repr + table outputs render', async 
   await expect(page.locator('.nb-count').first()).toContainText('[1]');
 
   // Cell 2 (new): uses cell 1's variable — the notebook property.
-  await page.locator('button:has-text("Code")').click();
+  await page.locator('.nb-toolbar button:has-text("Code")').click();
   await setCell(page, 1, 'result = [{"k": "total", "v": total * 2}]\nresult');
   await runCell(page, 1);
-  await expect(page.locator('.nb-cell').nth(1).locator('.nb-out-host')).toContainText('9300', { timeout: 30_000 });
+  // A list of dicts renders as a grid, with the figure grouped for reading.
+  await expect(page.locator('.nb-cell').nth(1).locator('.nb-out-host')).toContainText(
+    new Intl.NumberFormat(undefined).format(9300),
+    { timeout: 30_000 },
+  );
 });
 
 test('notebook: a failed cell is explained in plain English, and Run all stops there', async ({ page }) => {
   test.setTimeout(240_000);
   await bootNotebook(page);
   await setCell(page, 0, 'raise ValueError("boom")');
-  await page.locator('button:has-text("Code")').click();
+  await page.locator('.nb-toolbar button:has-text("Code")').click();
   await setCell(page, 1, 'print("never")');
-  await page.locator('button:has-text("Run all")').click();
+  await page.locator('.nb-toolbar button:has-text("Run all")').click();
 
   await page.waitForSelector('.nb-err-title', { timeout: 30_000 });
   await expect(page.locator('.nb-err-title')).toBeVisible();
@@ -98,21 +102,100 @@ test('notebook: recipes insert runnable code using the real column names', async
   await page.waitForSelector('.nb-start .nb-recipe');
 
   if (pandasStaged) {
-    // "Amt" wins over the numeric "ID" column — you total money, not row numbers.
-    await page.locator('.nb-recipe', { hasText: 'Total Amt by Dept' }).click();
+    // "Amt" is pre-picked over the numeric "ID" — you total money, not row numbers.
+    const card = page.locator('.nb-recipe', { hasText: 'Total' }).first();
+    await expect(card.locator('.recipe-pick').first()).toHaveValue('Amt');
+    await card.locator('button:has-text("Insert")').click();
     await expect(page.locator('.ce-input').first()).toHaveValue(/groupby\("Dept", as_index=False\)\["Amt"\]/);
     await page.waitForSelector('.nb-out-host .grid-row', { timeout: 90_000 });
     const rows = await gridRows(page, '.nb-out-host');
     expect(rows.map((r) => [r[1], r[2]])).toEqual([
-      ['Fin', '1650'],
-      ['IT', '1550'],
-      ['Ops', '1450'],
+      ['Fin', '1,650'],
+      ['IT', '1,550'],
+      ['Ops', '1,450'],
     ]);
   } else {
-    await page.locator('.nb-recipe', { hasText: 'See the first few rows' }).click();
+    const card = page.locator('.nb-recipe', { hasText: 'See the first few rows' });
+    await card.locator('button:has-text("Insert")').click();
     await expect(page.locator('.ce-input').first()).toHaveValue(/tables\["payroll"\]/);
     await expect(page.locator('.nb-stdout').first()).toContainText('30 rows', { timeout: 90_000 });
   }
+});
+
+test('notebook: a recipe can be re-pointed at other columns without editing Python', async ({ page }) => {
+  test.skip(!pandasStaged, 'pandas wheels not staged in this build');
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await page.waitForSelector('.nb-start .nb-recipe');
+
+  // "Total {Amt} by {Dept}" — change what is totalled and what it groups by.
+  const card = page.locator('.nb-recipe', { hasText: 'Total' }).first();
+  await card.locator('.recipe-pick').nth(0).selectOption('ID');
+  await card.locator('.recipe-pick').nth(1).selectOption('Dept');
+  await card.locator('button:has-text("Insert")').click();
+
+  await expect(page.locator('.ce-input').first()).toHaveValue(/groupby\("Dept", as_index=False\)\["ID"\]/);
+  await page.waitForSelector('.nb-out-host .grid-row', { timeout: 90_000 });
+});
+
+test('notebook: every table result in the notebook exports as one workbook', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await setCell(page, 0, '[{"Dept": "Fin", "Total": 1650}, {"Dept": "Ops", "Total": 1450}]');
+  await runCell(page, 0);
+  await page.waitForSelector('.out-table .grid-row', { timeout: 90_000 });
+
+  const [dl] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('.nb-toolbar button:has-text("Export")').click(),
+  ]);
+  expect(await dl.suggestedFilename()).toMatch(/^payroll-\d{4}-\d{2}-\d{2}-results\.xlsx$/);
+});
+
+test('notebook: a plain list of dicts is shown as a table, with figures aligned', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await setCell(page, 0, '[{"Dept": "Fin", "Total": 1643552}, {"Dept": "Ops", "Total": 900}]');
+  await runCell(page, 0);
+  await page.waitForSelector('.out-table .grid-row', { timeout: 90_000 });
+
+  // Grouped for reading; the export still carries the raw number.
+  await expect(page.locator('.out-table .grid-num').first()).toHaveText(
+    new Intl.NumberFormat(undefined).format(1643552),
+  );
+  await expect(page.locator('.out-table .out-label-meta')).toContainText('2 rows × 2 columns');
+});
+
+test('notebook: a deleted cell can be brought back', async ({ page }) => {
+  await page.goto('/#/tool/python');
+  await setCell(page, 0, 'careful = "hours of work"');
+  await page.locator('.nb-toolbar button:has-text("Code")').click();
+  await setCell(page, 1, 'second = 2');
+
+  await page.locator('.nb-cell').nth(0).locator('.nb-del').click();
+  await expect(page.locator('.nb-undo')).toContainText('Deleted a code cell');
+  await expect(page.locator('.ce-input')).toHaveCount(1);
+
+  await page.locator('.nb-undo button:has-text("Undo")').click();
+  await expect(page.locator('.nb-undo')).toHaveCount(0);
+  await expect(page.locator('.ce-input').nth(0)).toHaveValue('careful = "hours of work"');
+  await expect(page.locator('.ce-input').nth(1)).toHaveValue('second = 2');
+});
+
+test('notebook: a step can be added or duplicated in the middle, not only at the end', async ({ page }) => {
+  await page.goto('/#/tool/python');
+  await setCell(page, 0, 'first = 1');
+  await page.locator('.nb-toolbar button:has-text("Code")').click();
+  await setCell(page, 1, 'last = 9');
+
+  // The strip belongs to the first cell, so its insert lands at position 2.
+  await page.locator('.nb-cell').nth(0).locator('.nb-insert button:has-text("＋ Code")').click();
+  await setCell(page, 1, 'middle = 5');
+  await expect(page.locator('.ce-input')).toHaveCount(3);
+  await expect(page.locator('.ce-input').nth(2)).toHaveValue('last = 9');
+
+  await page.locator('.nb-cell').nth(1).locator('.nb-insert button:has-text("Duplicate")').click();
+  await expect(page.locator('.ce-input').nth(2)).toHaveValue('middle = 5');
 });
 
 test('notebook: save and reopen keeps the results, not just the code', async ({ page }) => {
@@ -185,7 +268,7 @@ test('notebook: notes render as markdown and .ipynb round-trips both cell kinds'
   test.setTimeout(240_000);
   await bootNotebook(page);
   await setCell(page, 0, 'x = 41\nx + 1');
-  await page.locator('button:has-text("Note")').click();
+  await page.locator('.nb-toolbar button:has-text("Note")').click();
   await page.locator('.ce-input').nth(1).fill('# My notes');
 
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('.nb-toolbar button:has-text("Save")')]);
@@ -327,7 +410,7 @@ test('notebook: Clear results empties every result and keeps the code', async ({
   await expect(page.locator('.nb-stdout')).toContainText('here', { timeout: 90_000 });
   await expect(page.locator('.nb-count').first()).toContainText('[1]');
 
-  await page.locator('button:has-text("Clear results")').click();
+  await page.locator('.nb-toolbar button:has-text("Clear")').click();
   await expect(page.locator('.nb-stdout')).toHaveCount(0);
   await expect(page.locator('.nb-count').first()).toContainText('[ ]');
   await expect(page.locator('.ce-input').first()).toHaveValue('print("here")');

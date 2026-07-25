@@ -12,15 +12,41 @@ const MIN_W = 40;
 const MAX_AUTO_W = 340; // initial auto-fit cap; drag/dblclick can exceed
 const MAX_FIT_W = 600; // dblclick full-content autofit cap
 const CHAR_PX = 7.8; // approx px per character at 14.5px body font
+const NUM_CHAR_PX = 9.1; // tabular figures are wider than the proportional average
 const SAMPLE = 50; // rows sampled for the initial auto-fit
 
 // Session-scoped width memory: same column set → same widths across re-renders
 // (e.g. re-running a query or notebook cell). Nothing is persisted to storage.
 const savedWidths = new Map<string, number[]>();
 
-export function createDataGrid(sheet: SheetData): HTMLElement {
+export interface DataGridOptions {
+  /**
+   * Group digits and right-align numeric columns. Finance data is read as
+   * columns of figures — `1643552` left-aligned is not readable, and
+   * misaligned digits hide an order-of-magnitude error. Off by default so the
+   * conversion previews keep showing values exactly as stored; the notebook's
+   * result grids turn it on. Display only — exports use the raw values.
+   */
+  formatNumbers?: boolean;
+}
+
+export function createDataGrid(sheet: SheetData, opts: DataGridOptions = {}): HTMLElement {
   const container = document.createElement('div');
   container.className = 'grid';
+
+  // A column counts as numeric only if every value in it is a number, so a
+  // reference column with the odd "N/A" is left alone.
+  const numericCols = sheet.headers.map((_, ci) => {
+    let seen = false;
+    for (let r = 0; r < Math.min(sheet.rows.length, SAMPLE); r++) {
+      const v = sheet.rows[r][ci];
+      if (v === null || v === undefined || v === '') continue;
+      if (typeof v !== 'number') return false;
+      seen = true;
+    }
+    return seen;
+  });
+  const isNumeric = (ci: number): boolean => !!opts.formatNumbers && numericCols[ci];
 
   const sig = sheet.headers.join('');
   const fitWidth = (ci: number, rowLimit: number, cap: number): number => {
@@ -29,9 +55,16 @@ export function createDataGrid(sheet: SheetData): HTMLElement {
     const n = Math.min(sheet.rows.length, rowLimit);
     for (let r = 0; r < n; r++) {
       const v = sheet.rows[r][ci];
-      if (v !== null && v !== undefined) chars = Math.max(chars, String(v).length);
+      // Measure what is actually drawn: a grouped figure is wider than its raw
+      // value, and sizing to the raw value truncates it to "16,435,…".
+      if (v !== null && v !== undefined) {
+        chars = Math.max(chars, (isNumeric(ci) && typeof v === 'number' ? groupDigits(v) : String(v)).length);
+      }
     }
-    return Math.min(cap, Math.max(MIN_W, Math.round(chars * CHAR_PX) + 26));
+    // Formatted figures render with tabular-nums, whose digits are wider than
+    // the proportional average CHAR_PX assumes — measure them at their own rate
+    // or the column clips the very numbers the grouping exists to make legible.
+    return Math.min(cap, Math.max(MIN_W, Math.round(chars * (isNumeric(ci) ? NUM_CHAR_PX : CHAR_PX)) + 26));
   };
 
   const remembered = savedWidths.get(sig);
@@ -89,7 +122,9 @@ export function createDataGrid(sheet: SheetData): HTMLElement {
       html +=
         `<div class="grid-row" style="top:${i * ROW_HEIGHT}px;grid-template-columns:${t}">` +
         `<div class="grid-cell grid-rownum">${i + 1}</div>` +
-        sheet.rows[i].map((c) => `<div class="grid-cell">${fmt(c)}</div>`).join('') +
+        sheet.rows[i]
+          .map((c, ci) => `<div class="grid-cell${isNumeric(ci) ? ' grid-num' : ''}">${fmt(c, isNumeric(ci))}</div>`)
+          .join('') +
         `</div>`;
     }
     pool.innerHTML = html;
@@ -145,8 +180,22 @@ export function createDataGrid(sheet: SheetData): HTMLElement {
   return container;
 }
 
-function fmt(c: CellValue): string {
+/**
+ * Digit grouping in the viewer's own locale — an Indian browser gets
+ * 16,43,552 and a US one 1,643,552. Built from the number's own string form so
+ * no precision is invented or lost; only the integer part is grouped.
+ */
+export function groupDigits(n: number): string {
+  const s = String(n);
+  const m = s.match(/^(-?)(\d+)(\.\d+)?$/);
+  if (!m) return s; // exponent form, Infinity, NaN — leave exactly as-is
+  const grouped = new Intl.NumberFormat(undefined, { useGrouping: true }).format(Number(m[2]));
+  return m[1] + grouped + (m[3] ?? '');
+}
+
+function fmt(c: CellValue, numeric = false): string {
   if (c === null || c === undefined) return '';
+  if (numeric && typeof c === 'number' && Number.isFinite(c)) return escapeHtml(groupDigits(c));
   return escapeHtml(String(c));
 }
 

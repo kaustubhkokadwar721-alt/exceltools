@@ -2,9 +2,15 @@
 //
 // A blank cell is a wall if you don't write Python. Each recipe below is a
 // finance task in plain English that expands into runnable code with the user's
-// own table and column names already filled in — so the first thing they see is
-// working code they can read and adjust, not a blinking cursor. Pure and
-// unit-tested; the tool layer only picks a recipe and inserts the string.
+// own table and column names.
+//
+// Recipes are *parameterised*, not fixed: every one declares which columns it
+// needs, so the panel can render "Total {PrimaryAmount} by {Status}" with the
+// column names as dropdowns. Picking a different column is the single most
+// common thing a user wants next, and without this it means editing Python —
+// which is exactly the wall the recipes exist to remove. Defaults still come
+// from the heuristics below, so one click without touching a dropdown gives a
+// sensible step. Pure and unit-tested; the tool layer only renders and inserts.
 import type { ColumnKind } from './types';
 
 export interface SnippetColumn {
@@ -24,34 +30,43 @@ export interface SnippetContext {
   charts: boolean;
 }
 
+export interface SnippetParam {
+  id: string;
+  /** Spoken label, for the select's accessible name. */
+  label: string;
+  kind: 'table' | 'column';
+  /** Column params: restrict the choices to these kinds. */
+  kinds?: ColumnKind[];
+  /** Column params: id of the param naming the table it belongs to. */
+  from?: string;
+  /** The pre-picked value — what you get if you never open the dropdown. */
+  default: string;
+}
+
 export interface Snippet {
   id: string;
   group: 'Look at the data' | 'Summarise' | 'Filter and sort' | 'Compare tables' | 'Charts';
-  label: string;
+  /** `Total {value} by {group}` — braces name params, rendered as dropdowns. */
+  template: string;
   blurb: string;
-  code: string;
+  params: SnippetParam[];
+  build(values: Record<string, string>, ctx: SnippetContext): string;
 }
 
-const py = (t: SnippetTable): string => `df_${t.name}`;
 const q = (s: string): string => JSON.stringify(s);
+
+/** Reference numbers are numeric but never worth totalling. */
+const ID_LIKE = /(^|[_\s])(id|no|nos|num|number|ref|reference|code|key|serial|sr|srno|line)([_\s.]|$)/i;
+/** Dates arrive from Excel as numbers; totalling one is always a mistake. */
+const DATE_LIKE = /date|month|period|day|posted|quarter|year|dt$/i;
 
 const firstOf = (t: SnippetTable, kinds: ColumnKind[]): SnippetColumn | undefined =>
   t.columns.find((c) => kinds.includes(c.kind));
 
-/** Reference numbers are numeric but never worth totalling. */
-const ID_LIKE = /(^|[_\s])(id|no|nos|num|number|ref|reference|code|key|serial|sr|srno|year|line)([_\s.]|$)/i;
-
 /** A sensible grouping column: prefer text, fall back to the first column. */
 const groupCol = (t: SnippetTable): SnippetColumn | undefined => firstOf(t, ['text', 'boolean']) ?? t.columns[0];
 
-/** Column that looks like it holds dates, by name. */
-const DATE_LIKE = /date|month|period|day|posted|quarter|year|dt$/i;
-
-/**
- * A sensible column to add up. Totalling an invoice number is never what
- * anyone meant, and totalling a date is worse — dates arrive from Excel as
- * numbers, so both shapes are passed over before falling back.
- */
+/** A sensible column to add up — never an identifier, never a date. */
 const valueCol = (t: SnippetTable): SnippetColumn | undefined => {
   const numeric = t.columns.filter((c) => c.kind === 'number');
   return (
@@ -64,6 +79,28 @@ const valueCol = (t: SnippetTable): SnippetColumn | undefined => {
 
 const dateCol = (t: SnippetTable): SnippetColumn | undefined => t.columns.find((c) => DATE_LIKE.test(c.name));
 
+/** The columns a dropdown should offer for one param, given the chosen table. */
+export function columnChoices(ctx: SnippetContext, tableName: string, kinds?: ColumnKind[]): SnippetColumn[] {
+  const table = ctx.tables.find((t) => t.name === tableName) ?? ctx.tables[0];
+  if (!table) return [];
+  const matching = kinds ? table.columns.filter((c) => kinds.includes(c.kind)) : table.columns;
+  // Never offer an empty dropdown — a loose match beats no choice at all.
+  return matching.length ? matching : table.columns;
+}
+
+/** The values a recipe starts with: every param's default. */
+export function defaultValues(s: Snippet): Record<string, string> {
+  return Object.fromEntries(s.params.map((p) => [p.id, p.default]));
+}
+
+/** Fill `{param}` placeholders — the spoken form of a recipe's title. */
+export function renderTemplate(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (_, id: string) => values[id] ?? `{${id}}`);
+}
+
+/** Reference to a table in generated code, in whichever dialect is available. */
+const ref = (ctx: SnippetContext, name: string): string => (ctx.pandas ? `df_${name}` : `tables[${q(name)}]`);
+
 /**
  * Build the recipe list for the tables currently registered. Recipes whose
  * inputs don't exist (no second table, no numeric column, no charts) are left
@@ -74,31 +111,44 @@ export function snippetsFor(ctx: SnippetContext): Snippet[] {
   const [t, t2] = ctx.tables;
   if (!t || !t.columns.length) return out;
 
+  const tableParam = (id = 'table', label = 'Table', def = t.name): SnippetParam => ({ id, label, kind: 'table', default: def });
+  const col = (id: string, label: string, def: string | undefined, kinds?: ColumnKind[], from = 'table'): SnippetParam => ({
+    id,
+    label,
+    kind: 'column',
+    kinds,
+    from,
+    default: def ?? '',
+  });
+
   const g = groupCol(t);
   const v = valueCol(t);
   const d = dateCol(t);
+  const hasNumber = t.columns.some((c) => c.kind === 'number');
 
   if (!ctx.pandas) {
     // Pandas missing (offline build without the wheel) — plain Python only.
     out.push({
       id: 'peek-plain',
       group: 'Look at the data',
-      label: 'See the first few rows',
+      template: 'See the first few rows of {table}',
       blurb: 'Prints the first 10 rows so you can check the data loaded correctly.',
-      code: `rows = tables[${q(t.name)}]\nprint(len(rows), "rows")\nrows[:10]`,
+      params: [tableParam()],
+      build: (val) => `rows = tables[${q(val.table)}]\nprint(len(rows), "rows")\nrows[:10]`,
     });
     if (g && v) {
       out.push({
         id: 'total-plain',
         group: 'Summarise',
-        label: `Total ${v.name} by ${g.name}`,
+        template: 'Total {value} by {group}',
         blurb: 'Adds up one column, grouped by another.',
-        code:
+        params: [tableParam(), col('value', 'Column to total', v.name), col('group', 'Group by', g.name)],
+        build: (val) =>
           `totals = {}\n` +
-          `for r in tables[${q(t.name)}]:\n` +
-          `    key = r[${q(g.name)}]\n` +
-          `    totals[key] = totals.get(key, 0) + (r[${q(v.name)}] or 0)\n\n` +
-          `[{${q(g.name)}: k, "Total": v} for k, v in sorted(totals.items())]`,
+          `for r in tables[${q(val.table)}]:\n` +
+          `    key = r[${q(val.group)}]\n` +
+          `    totals[key] = totals.get(key, 0) + (r[${q(val.value)}] or 0)\n\n` +
+          `[{${q(val.group)}: k, "Total": v} for k, v in sorted(totals.items())]`,
       });
     }
     return out;
@@ -107,151 +157,186 @@ export function snippetsFor(ctx: SnippetContext): Snippet[] {
   out.push({
     id: 'peek',
     group: 'Look at the data',
-    label: 'See the first few rows',
+    template: 'See the first few rows of {table}',
     blurb: 'Shows the top 20 rows — the quickest way to check the file loaded correctly.',
-    code: `${py(t)}.head(20)`,
+    params: [tableParam()],
+    build: (val) => `${ref(ctx, val.table)}.head(20)`,
   });
 
   out.push({
     id: 'shape',
     group: 'Look at the data',
-    label: 'How many rows and columns?',
-    blurb: 'Row count, column names and how many blanks each column has.',
-    code:
-      `print(${py(t)}.shape[0], "rows ×", ${py(t)}.shape[1], "columns")\n` +
-      `${py(t)}.isna().sum().rename("blanks").to_frame()`,
+    template: 'How big is {table}, and what is missing?',
+    blurb: 'Row and column counts, plus how many blanks each column has.',
+    params: [tableParam()],
+    build: (val) => {
+      const r = ref(ctx, val.table);
+      return `print(${r}.shape[0], "rows ×", ${r}.shape[1], "columns")\n${r}.isna().sum().rename("blanks").to_frame()`;
+    },
   });
 
   out.push({
     id: 'describe',
     group: 'Look at the data',
-    label: 'Summary statistics',
+    template: 'Summary statistics for {table}',
     blurb: 'Count, average, smallest and largest for every numeric column.',
-    code: `${py(t)}.describe().reset_index()`,
+    params: [tableParam()],
+    build: (val) => `${ref(ctx, val.table)}.describe().reset_index()`,
   });
 
   if (g) {
     out.push({
       id: 'count-by',
       group: 'Summarise',
-      label: `Count rows by ${g.name}`,
-      blurb: 'How many rows fall under each value — the fastest sanity check on a category column.',
-      code: `${py(t)}[${q(g.name)}].value_counts().rename_axis(${q(g.name)}).reset_index(name="Rows")`,
+      template: 'Count rows by {group}',
+      blurb: 'How many rows fall under each value — the fastest check on a category column.',
+      params: [tableParam(), col('group', 'Group by', g.name)],
+      build: (val) =>
+        `${ref(ctx, val.table)}[${q(val.group)}].value_counts().rename_axis(${q(val.group)}).reset_index(name="Rows")`,
     });
   }
 
-  if (g && v && v.kind === 'number') {
+  if (g && v && hasNumber) {
     out.push({
       id: 'total-by',
       group: 'Summarise',
-      label: `Total ${v.name} by ${g.name}`,
+      template: 'Total {value} by {group}',
       blurb: 'The group-and-add-up step behind most reconciliations.',
-      code:
-        `(${py(t)}\n` +
-        `    .groupby(${q(g.name)}, as_index=False)[${q(v.name)}]\n` +
+      params: [tableParam(), col('value', 'Column to total', v.name, ['number']), col('group', 'Group by', g.name)],
+      build: (val) =>
+        `(${ref(ctx, val.table)}\n` +
+        `    .groupby(${q(val.group)}, as_index=False)[${q(val.value)}]\n` +
         `    .sum()\n` +
-        `    .sort_values(${q(v.name)}, ascending=False))`,
+        `    .sort_values(${q(val.value)}, ascending=False))`,
     });
 
     out.push({
       id: 'pct-of-total',
       group: 'Summarise',
-      label: `${v.name} as a % of the total`,
+      template: '{value} by {group}, with % of total',
       blurb: 'Adds a percentage-of-total column next to each group.',
-      code:
-        `summary = ${py(t)}.groupby(${q(g.name)}, as_index=False)[${q(v.name)}].sum()\n` +
-        `summary["% of total"] = (summary[${q(v.name)}] / summary[${q(v.name)}].sum() * 100).round(1)\n` +
+      params: [tableParam(), col('value', 'Column to total', v.name, ['number']), col('group', 'Group by', g.name)],
+      build: (val) =>
+        `summary = ${ref(ctx, val.table)}.groupby(${q(val.group)}, as_index=False)[${q(val.value)}].sum()\n` +
+        `summary["% of total"] = (summary[${q(val.value)}] / summary[${q(val.value)}].sum() * 100).round(1)\n` +
         `summary.sort_values("% of total", ascending=False)`,
     });
 
     out.push({
       id: 'top-10',
       group: 'Filter and sort',
-      label: `Top 10 rows by ${v.name}`,
+      template: 'Top 10 rows by {value}',
       blurb: 'The largest values, biggest first.',
-      code: `${py(t)}.nlargest(10, ${q(v.name)})`,
+      params: [tableParam(), col('value', 'Column to rank by', v.name, ['number'])],
+      build: (val) => `${ref(ctx, val.table)}.nlargest(10, ${q(val.value)})`,
     });
-  }
 
-  if (t.columns.length >= 2 && g && v && v.kind === 'number') {
     const second = t.columns.find((c) => c.name !== g.name && c.name !== v.name);
     if (second) {
       out.push({
         id: 'pivot',
         group: 'Summarise',
-        label: `Pivot: ${g.name} down, ${second.name} across`,
+        template: 'Pivot: {group} down, {across} across, {value} totalled',
         blurb: 'A cross-tab of totals — the spreadsheet pivot table, in one step.',
-        code:
-          `(${py(t)}\n` +
-          `    .pivot_table(index=${q(g.name)}, columns=${q(second.name)}, values=${q(v.name)},\n` +
+        params: [
+          tableParam(),
+          col('group', 'Rows', g.name),
+          col('across', 'Columns', second.name),
+          col('value', 'Values', v.name, ['number']),
+        ],
+        build: (val) =>
+          `(${ref(ctx, val.table)}\n` +
+          `    .pivot_table(index=${q(val.group)}, columns=${q(val.across)}, values=${q(val.value)},\n` +
           `                 aggfunc="sum", fill_value=0)\n` +
           `    .reset_index())`,
       });
     }
-  }
 
-  if (v && v.kind === 'number') {
     out.push({
       id: 'filter',
       group: 'Filter and sort',
-      label: `Rows where ${v.name} is above a number`,
-      blurb: 'Change the number to whatever threshold you need.',
-      code: `threshold = 0\n${py(t)}[${py(t)}[${q(v.name)}] > threshold]`,
+      template: 'Rows where {value} is above a number',
+      blurb: 'Change the number in the code to whatever threshold you need.',
+      params: [tableParam(), col('value', 'Column to test', v.name, ['number'])],
+      build: (val) => {
+        const r = ref(ctx, val.table);
+        return `threshold = 0\n${r}[${r}[${q(val.value)}] > threshold]`;
+      },
     });
   }
 
   out.push({
     id: 'blanks',
     group: 'Filter and sort',
-    label: 'Rows with something missing',
+    template: 'Rows in {table} with something missing',
     blurb: 'Every row that has a blank in any column — usually the first thing to fix.',
-    code: `${py(t)}[${py(t)}.isna().any(axis=1)]`,
+    params: [tableParam()],
+    build: (val) => {
+      const r = ref(ctx, val.table);
+      return `${r}[${r}.isna().any(axis=1)]`;
+    },
   });
 
   if (g) {
     out.push({
       id: 'dupes',
       group: 'Filter and sort',
-      label: `Duplicate ${g.name} values`,
+      template: 'Duplicate {group} values',
       blurb: 'Shows every row whose key appears more than once.',
-      code: `${py(t)}[${py(t)}.duplicated(${q(g.name)}, keep=False)].sort_values(${q(g.name)})`,
+      params: [tableParam(), col('group', 'Key column', g.name)],
+      build: (val) => {
+        const r = ref(ctx, val.table);
+        return `${r}[${r}.duplicated(${q(val.group)}, keep=False)].sort_values(${q(val.group)})`;
+      },
     });
   }
 
   if (t2 && t2.columns.length) {
     const shared = t.columns.find((c) => t2.columns.some((c2) => c2.name === c.name));
     const key = shared?.name ?? t.columns[0].name;
+    const pair = (): SnippetParam[] => [
+      tableParam(),
+      tableParam('other', 'Compare with', t2.name),
+      col('key', 'Match on', key),
+    ];
+
     out.push({
       id: 'missing-from',
       group: 'Compare tables',
-      label: `Rows in ${t.name} that are missing from ${t2.name}`,
-      blurb: `Matches the two tables on "${key}" and keeps what only exists in the first.`,
-      code:
-        `merged = ${py(t)}.merge(${py(t2)}, on=${q(key)}, how="left", indicator=True,\n` +
-        `                        suffixes=("", "_${t2.name}"))\n` +
+      template: 'Rows in {table} that are missing from {other}',
+      blurb: 'Matches the two tables on a key column and keeps what only exists in the first.',
+      params: pair(),
+      build: (val) =>
+        `merged = ${ref(ctx, val.table)}.merge(${ref(ctx, val.other)}, on=${q(val.key)}, how="left",\n` +
+        `                        indicator=True, suffixes=("", "_${val.other}"))\n` +
         `merged[merged["_merge"] == "left_only"].drop(columns="_merge")`,
-    });
+      });
+
     out.push({
       id: 'matched',
       group: 'Compare tables',
-      label: `Match ${t.name} against ${t2.name}`,
-      blurb: `Joins both tables on "${key}" so you can compare their columns side by side.`,
-      code: `${py(t)}.merge(${py(t2)}, on=${q(key)}, how="inner", suffixes=("_${t.name}", "_${t2.name}"))`,
+      template: 'Match {table} against {other} on {key}',
+      blurb: 'Joins both tables so you can compare their columns side by side.',
+      params: pair(),
+      build: (val) =>
+        `${ref(ctx, val.table)}.merge(${ref(ctx, val.other)}, on=${q(val.key)}, how="inner",\n` +
+        `                        suffixes=("_${val.table}", "_${val.other}"))`,
     });
   }
 
-  if (ctx.charts && g && v && v.kind === 'number') {
+  if (ctx.charts && g && v && hasNumber) {
     out.push({
       id: 'bar',
       group: 'Charts',
-      label: `Bar chart of ${v.name} by ${g.name}`,
-      blurb: 'Draws the chart underneath the cell. Right-click it to save the picture.',
-      code:
+      template: 'Bar chart of {value} by {group}',
+      blurb: 'Draws the chart underneath the cell, with Save image next to it.',
+      params: [tableParam(), col('value', 'Bar height', v.name, ['number']), col('group', 'One bar per', g.name)],
+      build: (val) =>
         `import matplotlib.pyplot as plt\n\n` +
-        `summary = ${py(t)}.groupby(${q(g.name)})[${q(v.name)}].sum().sort_values(ascending=False)\n` +
+        `summary = ${ref(ctx, val.table)}.groupby(${q(val.group)})[${q(val.value)}].sum().sort_values(ascending=False)\n` +
         `ax = summary.plot(kind="bar", color="#1f5c3d")\n` +
-        `ax.set_ylabel(${q(v.name)})\n` +
-        `ax.set_title(${q(`${v.name} by ${g.name}`)})\n` +
+        `ax.set_ylabel(${q(val.value)})\n` +
+        `ax.set_title(${q(val.value)} + " by " + ${q(val.group)})\n` +
         `plt.tight_layout()`,
     });
 
@@ -259,16 +344,17 @@ export function snippetsFor(ctx: SnippetContext): Snippet[] {
       out.push({
         id: 'trend',
         group: 'Charts',
-        label: `${v.name} over time (${d.name})`,
+        template: '{value} over time, by {date}',
         blurb: 'Totals by month and draws the trend line.',
-        code:
+        params: [tableParam(), col('value', 'Column to total', v.name, ['number']), col('date', 'Date column', d.name)],
+        build: (val) =>
           `import matplotlib.pyplot as plt\n\n` +
-          `t = ${py(t)}.copy()\n` +
-          `t[${q(d.name)}] = pd.to_datetime(t[${q(d.name)}], errors="coerce")\n` +
-          `monthly = t.dropna(subset=[${q(d.name)}]).groupby(t[${q(d.name)}].dt.to_period("M"))[${q(v.name)}].sum()\n` +
+          `t = ${ref(ctx, val.table)}.copy()\n` +
+          `t[${q(val.date)}] = pd.to_datetime(t[${q(val.date)}], errors="coerce")\n` +
+          `monthly = t.dropna(subset=[${q(val.date)}]).groupby(t[${q(val.date)}].dt.to_period("M"))[${q(val.value)}].sum()\n` +
           `monthly.index = monthly.index.astype(str)\n` +
           `ax = monthly.plot(marker="o", color="#1f5c3d")\n` +
-          `ax.set_ylabel(${q(v.name)})\n` +
+          `ax.set_ylabel(${q(val.value)})\n` +
           `plt.tight_layout()`,
       });
     }

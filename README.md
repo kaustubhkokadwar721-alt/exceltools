@@ -7,7 +7,7 @@ PWA. Built for accountants and finance teams, not engineers.
 
 > **Status:** Phases 0–4 complete; Phase 5 hardening mostly done (tests, CI,
 > security, performance, fidelity — only the real-PC pilot remains). Nine tools
-> live, plus native Excel Table import. 88 unit + 29 E2E tests in CI.
+> live, plus native Excel Table import. 95 unit + 34 E2E tests in CI.
 > See [`docs/`](docs/).
 
 ## Live app
@@ -66,6 +66,10 @@ accountant can actually use it.
   *total by category*, *rows missing from another table*, *duplicates*, *a bar
   chart* — and each one inserts working code **written with your own column
   names**, then runs it. Edit it afterwards; nothing is locked.
+- **The tasks are adjustable, not fixed.** Each one reads as a sentence with
+  its columns as dropdowns — *Total ⌄PrimaryAmount by ⌄Status* — so wanting it
+  *by Entity instead* is a dropdown, not a Python edit. With several files
+  loaded you can point a step at a different table the same way.
 - **Errors in English.** A failed cell says *"There is no column called
   'Amout'. Did you mean 'Amount'?"* — the traceback is folded away behind
   *Technical details*. Around twenty of the failures that actually happen
@@ -77,8 +81,14 @@ accountant can actually use it.
   still opens in real Jupyter.
 - **Results go back to Excel.** Every table result carries **Copy** (pastes
   into a spreadsheet as cells, not one blob), **CSV** and **Excel**; charts
-  carry **Save image**. A result you can see but can't take anywhere gets
-  retyped, and retyping is where errors come from.
+  carry **Save image**. **Export** puts *every* table result into one workbook,
+  a sheet per step — the thing you actually hand over. A result you can see but
+  can't take anywhere gets retyped, and retyping is where errors come from.
+- **Figures read like figures.** Numeric columns in a result are grouped and
+  right-aligned in your own locale (`16,43,552` on an Indian machine,
+  `1,643,552` on a US one), with tabular digits so a column can be read down
+  and a stray order of magnitude stands out. Display only — exports carry the
+  raw values.
 - **Results are tables, not `repr`.** A plain Python list of dicts, list of
   rows, or a dict of totals renders as a grid with exports — you don't need
   pandas to get a readable answer.
@@ -88,8 +98,12 @@ accountant can actually use it.
 - **Fold anything.** Collapse a cell's code (its first line stays as a label)
   or its results; the state round-trips through the same `.ipynb` fields
   Jupyter uses. Errors are never folded away.
-- **Crash recovery.** Work is kept in this browser as you type, and offered
-  back if the tab dies. Nothing leaves the device.
+- **Crash recovery, and undo.** Work is kept in this browser as you type and
+  offered back if the tab dies; a deleted cell leaves an **Undo** in the gap it
+  came from. Nothing leaves the device.
+- **Add a step where you are.** Hovering a cell reveals *＋ Code*, *＋ Note*
+  and *⧉ Duplicate* in the gap below it, so building in the middle of a
+  notebook doesn't mean adding at the end and pressing ↑ four times.
 - **A Stop button that works**, implemented honestly: it restarts the engine and
   re-registers your tables, and tells you the variables are gone.
 - **Click a column name** in the right-hand list to drop its exact spelling into
@@ -141,10 +155,10 @@ Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
 
 ## Quality
 
-- **88 unit tests** (Vitest) over the pure modules — transform, validation, zip,
+- **95 unit tests** (Vitest) over the pure modules — transform, validation, zip,
   tables, source, plus the notebook's `.ipynb` round-trip (results included),
   error translation, recipe generation, draft storage and syntax highlighting —
-  and **29 E2E tests** (Playwright): one per tool, Excel-Table import, staged
+  and **34 E2E tests** (Playwright): one per tool, Excel-Table import, staged
   rename + schema, a **no-external-requests privacy guard**, and the notebook's
   save/reopen, recovery, recipes and plain-English errors.
 - CI (`.github/workflows/test.yml`) runs typecheck + unit + E2E on every PR and
@@ -161,8 +175,8 @@ npm install
 npm run dev        # dev server
 npm run build      # → dist/ (static, self-contained)
 npm run preview    # serve dist/ locally; test PWA + offline in DevTools
-npm run test       # 88 unit tests (Vitest)
-npm run test:e2e   # 29 E2E tests (Playwright, against the production build)
+npm run test       # 95 unit tests (Vitest)
+npm run test:e2e   # 34 E2E tests (Playwright, against the production build)
 npm run package    # → exceltools-offline.zip (offline distributable)
 npm run typecheck
 ```

@@ -186,6 +186,32 @@ list of dicts, a list of equal-length rows, a dict of totals
 line of `repr`. Without pandas staged, that is the difference between a usable
 answer and an unreadable one.
 
+## Decision 14 — recipes are parameterised, not fixed
+
+A fixed recipe list is a demo. The second thing anyone wants is the same step
+against a *different column* — "totals by entity, not status" — and if that
+costs a Python edit, the recipe list has only postponed the wall it exists to
+remove.
+
+So a recipe (`src/core/snippets.ts`) declares its inputs rather than hard-coding
+them: a template like `Total {value} by {group}` plus typed params, and a
+`build(values)` that emits the code. The panel renders the template with the
+params as inline dropdowns, so the card reads as the sentence it produces and
+changing it is one click. Defaults still come from the heuristics (never total
+an identifier, never total a date), so an untouched card is still one click to a
+sensible step. With several files loaded, the table itself is a param — one
+recipe list covers every table instead of only the first.
+
+Two display decisions belong with it. Figures in a result grid are digit-grouped
+and right-aligned with `tabular-nums`, in the *viewer's* locale — an Indian
+machine gets `16,43,552` without us guessing — because a column of finance
+figures that cannot be read down is not a result. It is opt-in per grid
+(`formatNumbers`) so the conversion previews keep showing values exactly as
+stored, and it is display-only: exports carry raw values. Note that enabling it
+also changed how wide the column must be — tabular digits are wider than the
+grid's proportional average, so `fitWidth` measures formatted numbers at their
+own rate, or the grouping truncates the very figures it was added to clarify.
+
 ## Open risks carried into later phases
 
 1. **Deployment on locked-down PCs** — CSP overrides, `file://` WASM restrictions,
