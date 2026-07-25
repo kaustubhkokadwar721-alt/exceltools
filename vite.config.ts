@@ -1,10 +1,19 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { readFileSync } from 'node:fs';
+
+// Stamped into exports so a figure in a workpaper can be traced back to the
+// exact build that produced it. Read at build time; never goes stale.
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
 // Relative base so the built bundle runs from any subfolder, a network
 // share, or file://-style internal hosting on locked-down work PCs.
 export default defineConfig({
   base: './',
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+  },
   build: {
     target: 'es2022',
     // SheetJS is imported only inside the parser worker, so it already lands in
@@ -39,7 +48,7 @@ export default defineConfig({
             options: {
               cacheName: 'duckdb-engine',
               expiration: { maxEntries: 12 },
-              cacheableResponse: { statuses: [0, 200] },
+              cacheableResponse: { statuses: [200] }, // never cache opaque responses
             },
           },
           {
@@ -50,7 +59,7 @@ export default defineConfig({
             options: {
               cacheName: 'python-engine',
               expiration: { maxEntries: 24 },
-              cacheableResponse: { statuses: [0, 200] },
+              cacheableResponse: { statuses: [200] }, // never cache opaque responses
             },
           },
         ],

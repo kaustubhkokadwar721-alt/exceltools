@@ -5,7 +5,7 @@ import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
 import { attachHelp } from '../ui/help';
-import { el, button, selectField, checkboxList } from '../ui/controls';
+import { el, button, selectField, checkboxList, escapeHtml } from '../ui/controls';
 import { parseFile, serializeSheet } from '../core/parser';
 import { downloadBlob } from '../core/fileio';
 import type { SheetData, ExportFormat } from '../core/types';
@@ -41,7 +41,7 @@ export function mountPivot(root: HTMLElement): void {
         const file = files[0];
         fileBase = file.name.replace(/\.[^.]+$/, '') || 'data';
         const cfg = root.querySelector<HTMLElement>('#config')!;
-        cfg.innerHTML = `<div class="loading">Loading the engine and reading "${file.name}"…</div>`;
+        cfg.innerHTML = `<div class="loading">Loading the engine and reading "${escapeHtml(file.name)}"…</div>`;
         try {
           const wb = await parseFile(file);
           const sheet = wb.sheets[0];

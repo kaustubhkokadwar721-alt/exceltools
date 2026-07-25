@@ -3,6 +3,7 @@
 // typed WorkerRequest/WorkerResponse contract in core/types.
 import * as XLSX from 'xlsx';
 import { extractTables } from '../core/tables';
+import { neutralizeSheet } from '../core/csvsafe';
 import type {
   WorkerRequest,
   WorkerResponse,
@@ -97,11 +98,20 @@ function serialize(sheet: SheetData, format: ExportFormat): { blob: Blob; mime: 
   const aoa: CellValue[][] = [sheet.headers, ...sheet.rows];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
+  // CSV and TSV are re-read by Excel, which evaluates anything that starts like
+  // a formula. Those two get a sheet whose text cells are neutralised; .xlsx
+  // does not need it (SheetJS writes these as string cells, which Excel never
+  // evaluates) and the machine-readable formats must stay verbatim.
+  const textSafe = (): XLSX.WorkSheet => {
+    const safe = neutralizeSheet(sheet);
+    return XLSX.utils.aoa_to_sheet([safe.headers, ...safe.rows] as CellValue[][]);
+  };
+
   switch (format) {
     case 'csv':
-      return textBlob(XLSX.utils.sheet_to_csv(ws), 'text/csv', 'csv');
+      return textBlob(XLSX.utils.sheet_to_csv(textSafe()), 'text/csv', 'csv');
     case 'tsv':
-      return textBlob(XLSX.utils.sheet_to_csv(ws, { FS: '\t' }), 'text/tab-separated-values', 'tsv');
+      return textBlob(XLSX.utils.sheet_to_csv(textSafe(), { FS: '\t' }), 'text/tab-separated-values', 'tsv');
     case 'html':
       return textBlob(XLSX.utils.sheet_to_html(ws), 'text/html', 'html');
     case 'json':

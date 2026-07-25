@@ -2,6 +2,7 @@
 // registry's help steps. Offline, no network — guidance travels with the app.
 // Uses the Registry review/details pattern.
 import { findTool } from '../app/registry';
+import { escapeHtml } from './controls';
 
 /** Append a help <details> into the tool's .tool-head (idempotent per mount). */
 export function attachHelp(root: HTMLElement, toolId: string): void {
@@ -20,6 +21,3 @@ export function attachHelp(root: HTMLElement, toolId: string): void {
   head.appendChild(details);
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}

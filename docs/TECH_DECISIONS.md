@@ -117,6 +117,115 @@ Jupyter. matplotlib and its wheel set ride the same best-effort CI staging as
 pandas (`scripts/pyodide-assets.mjs`); each capability degrades independently
 when wheels are absent.
 
+## Decision 12 — build the notebook, don't embed JupyterLite
+
+The obvious move once the notebook needed to grow up was to adopt
+**JupyterLite** — official, Pyodide/WASM, static files, no server, and it would
+satisfy the security constraint just as this app does. We rejected it for two
+reasons that only show up from the users' side.
+
+**It cannot see the workbook.** `src/core/python.ts` injects each registered
+sheet into the kernel as a named DataFrame, and the schema rail shows the
+accountant their real columns and types before they write a line. JupyterLite
+owns its own kernel behind its own virtual filesystem, so the flow becomes
+*export a file, then import it into a separate app*. That is the boundary, not
+an integration detail.
+
+**It is an IDE for data scientists.** Kernel menus, a file browser, a command
+palette, `%magics`, an extension manager and raw tracebacks all assume a user
+who knows what a kernel is. Our users are accountants; every one of those
+surfaces is a support ticket, in chrome that matches none of the other tools.
+
+Adopting it would also have meant vendoring a second SPA (its own service
+worker, routing and dependency tree) into a suite whose pitch to a firm's
+security team is that it can be audited end to end, and roughly doubling the
+offline zip that already carries Pyodide + pandas + matplotlib. It would not
+even have bought a working Stop button: reliable Pyodide interruption needs
+`SharedArrayBuffer` → cross-origin isolation → COOP/COEP headers, which neither
+GitHub Pages nor a `file://` copy can set.
+
+So the notebook is ours, and the effort went where upstream Jupyter offers
+nothing: **plain-English error translation** (`src/core/pyerrors.ts`), a
+**recipe library** that writes each step using the user's own column names
+(`src/core/snippets.ts`), **crash recovery** (`src/core/nbstore.ts`), a
+**variable inspector**, and **outputs that survive a save** — tables as
+`text/html` plus a lossless ExcelTools JSON mime, charts as `image/png`, so a
+reopened notebook shows its results without re-running, and still opens in real
+Jupyter. Stop is implemented honestly as *terminate the worker, boot a new one,
+re-register the tables*, and says so in the UI.
+
+Cells own their DOM: `src/tools/python.ts` builds each cell once and updates it
+in place, rather than re-rendering the notebook on every action. That is what
+makes typing, selection, scroll position and focus survive a run — and it was a
+prerequisite for everything above, not a polish item.
+
+## Decision 13 — the screen belongs to the work
+
+A tool's heading, blurb, help panel and drop area are onboarding: useful for
+thirty seconds, then pure overhead. Measured on a 1080px laptop they pushed the
+first cell to y≈650. So they collapse (`src/ui/toolchrome.ts`): once tables are
+registered the drop area becomes a one-line summary of what is loaded and the
+heading loses its blurb, both reversible. The toolbar is pinned, so **Stop** is
+reachable from anywhere in a long notebook.
+
+Results are the other half. Each one is labelled with what it is and how big it
+is, tinted by type (printed / table / chart / error), and foldable — folded
+state travels in the same `.ipynb` fields Jupyter uses (`jupyter.source_hidden`,
+`collapsed`), so a notebook folded here opens folded there. Errors sit outside
+the fold; hiding the thing that went wrong is never the right default.
+
+Every table result carries **Copy / CSV / Excel** (`src/ui/resultactions.ts`),
+reusing the parser worker's serializer. This is the difference between a tool
+and a demo: an accountant who cannot get the answer back into a spreadsheet
+will retype it, and retyping is where errors come from. Copy writes TSV
+specifically, because that is what pastes into cells rather than one blob.
+
+For the same reason the worker now recognises plain-Python tabular shapes — a
+list of dicts, a list of equal-length rows, a dict of totals
+(`_xt_to_table`) — and renders them as grids with exports instead of one long
+line of `repr`. Without pandas staged, that is the difference between a usable
+answer and an unreadable one.
+
+## Decision 14 — recipes are parameterised, not fixed
+
+A fixed recipe list is a demo. The second thing anyone wants is the same step
+against a *different column* — "totals by entity, not status" — and if that
+costs a Python edit, the recipe list has only postponed the wall it exists to
+remove.
+
+So a recipe (`src/core/snippets.ts`) declares its inputs rather than hard-coding
+them: a template like `Total {value} by {group}` plus typed params, and a
+`build(values)` that emits the code. The panel renders the template with the
+params as inline dropdowns, so the card reads as the sentence it produces and
+changing it is one click. Defaults still come from the heuristics (never total
+an identifier, never total a date), so an untouched card is still one click to a
+sensible step. With several files loaded, the table itself is a param — one
+recipe list covers every table instead of only the first.
+
+Sorting belongs to the same idea. Clicking a result's column header sorts it —
+ascending, descending, then back to the file's own order — with blanks pinned
+last in both directions, because a missing figure is not a small one, and ties
+broken by original position so the order is stable. It lives in the shared grid
+behind an opt-in flag (`sortable`) for the same reason as the formatting: a
+conversion preview should show the file as it is.
+
+Two display decisions belong with it. Figures in a result grid are digit-grouped
+and right-aligned with `tabular-nums`, in the *viewer's* locale — an Indian
+machine gets `16,43,552` without us guessing — because a column of finance
+figures that cannot be read down is not a result. It is opt-in per grid
+(`formatNumbers`) so the conversion previews keep showing values exactly as
+stored, and it is display-only: exports carry raw values. Note that enabling it
+also changed how wide the column must be — tabular digits are wider than the
+grid's proportional average, so `fitWidth` measures formatted numbers at their
+own rate, or the grouping truncates the very figures it was added to clarify.
+
+Finally, an empty result. `_xt_to_table` now treats an empty list, tuple or dict
+as a table with no rows rather than letting it fall through to `repr`, so a
+filter that matched nothing renders as *"No rows — the step ran without error"*
+instead of `[]`. For a reconciliation, nothing found is frequently the answer;
+it should not look like a failure. The pandas path already carried the column
+names in that case, so they are shown.
+
 ## Open risks carried into later phases
 
 1. **Deployment on locked-down PCs** — CSP overrides, `file://` WASM restrictions,

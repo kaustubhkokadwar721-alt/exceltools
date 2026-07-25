@@ -13,6 +13,9 @@ export interface SheetData {
 
 export type CellValue = string | number | boolean | null;
 
+/** Value shape inferred from a column's data — drives schema hints and recipes. */
+export type ColumnKind = 'number' | 'boolean' | 'text';
+
 /** A native Excel Table (ListObject), extracted with its own name + range and
  *  resolved to a raw grid (row 0 = the table's column headers). */
 export interface TableDef {

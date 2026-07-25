@@ -5,7 +5,7 @@ import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
 import { attachHelp } from '../ui/help';
-import { selectField, button, el } from '../ui/controls';
+import { selectField, button, el, escapeHtml } from '../ui/controls';
 import { tableSetupCard, type SourceSetup } from '../ui/source-setup';
 import { parseFile, serializeSheet } from '../core/parser';
 import { resolveSource } from '../core/source';
@@ -41,7 +41,7 @@ function reset(body: HTMLElement): void {
       onWarning: (m) => toast(m, 'warning', 7000),
       onFiles: async (files) => {
         const file = files[0];
-        body.innerHTML = `<div class="loading">Parsing <strong>${file.name}</strong>…</div>`;
+        body.innerHTML = `<div class="loading">Parsing <strong>${escapeHtml(file.name)}</strong>…</div>`;
         try {
           const wb = await parseFile(file);
           renderConfig(body, file.name, wb);

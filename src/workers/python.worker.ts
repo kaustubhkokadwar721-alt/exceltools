@@ -8,7 +8,8 @@ import type { CellValue } from '../core/types';
 interface InitMsg { kind: 'init'; indexURL: string }
 interface RegisterMsg { kind: 'register'; name: string; headers: string[]; rows: CellValue[][] }
 interface RunCellMsg { kind: 'runCell'; id: number; code: string }
-type InMsg = InitMsg | RegisterMsg | RunCellMsg;
+interface VarsMsg { kind: 'vars' }
+type InMsg = InitMsg | RegisterMsg | RunCellMsg | VarsMsg;
 
 export type CellOut =
   | { type: 'table'; headers: string[]; rows: CellValue[][] }
@@ -37,6 +38,14 @@ import ast, json, traceback
 _g = globals()
 tables = {}
 
+def _xt_cell(v):
+    """JSON-safe scalar. NaN/Infinity are not valid JSON, so they read as blank."""
+    if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+        return None
+    if v is None or isinstance(v, (bool, int, float, str)):
+        return v
+    return repr(v)
+
 def _xt_to_table(r):
     try:
         import pandas as pd
@@ -48,6 +57,35 @@ def _xt_to_table(r):
             return {"type": "table", "headers": [str(c) for c in d.columns], "rows": rows}
     except ImportError:
         pass
+    # Plain Python shapes that are really tables. Without this, a result like
+    # [{"Dept": "Fin", "Total": 1650}, ...] prints as one long line of repr —
+    # unreadable, and impossible to export to a spreadsheet.
+    # An empty result is still a table — one with no rows. Printing "[]" reads
+    # as a failure; "No rows" reads as the answer, which it often is.
+    if isinstance(r, (list, tuple, dict)) and not r:
+        return {"type": "table", "headers": [], "rows": []}
+    if isinstance(r, (list, tuple)) and r:
+        if all(isinstance(x, dict) for x in r):
+            headers = []
+            for x in r:
+                for k in x.keys():
+                    if k not in headers:
+                        headers.append(k)
+            return {
+                "type": "table",
+                "headers": [str(h) for h in headers],
+                "rows": [[_xt_cell(x.get(h)) for h in headers] for x in r],
+            }
+        if all(isinstance(x, (list, tuple)) for x in r) and len(set(len(x) for x in r)) == 1:
+            return {
+                "type": "table",
+                "headers": ["Column %d" % (i + 1) for i in range(len(r[0]))],
+                "rows": [[_xt_cell(v) for v in x] for x in r],
+            }
+        if len(r) > 10 and all(not isinstance(x, (list, tuple, dict, set)) for x in r):
+            return {"type": "table", "headers": ["Value"], "rows": [[_xt_cell(v)] for v in r]}
+    if isinstance(r, dict) and r and all(not isinstance(v, (list, tuple, dict, set)) for v in r.values()):
+        return {"type": "table", "headers": ["Key", "Value"], "rows": [[str(k), _xt_cell(v)] for k, v in r.items()]}
     return None
 
 def _xt_figures():
@@ -82,13 +120,50 @@ def _xt_run_cell(code):
             else:
                 outputs.append({"type": "text", "text": repr(value)})
         return json.dumps({"ok": True, "outputs": outputs})
-    except Exception:
+    except BaseException as exc:
         tb = traceback.format_exc()
         # Trim runner frames: keep from the <cell> frame onward when present.
         lines = tb.splitlines()
         idx = next((i for i, l in enumerate(lines) if '"<cell>"' in l or "<cell>" in l), 1)
         trimmed = "\\n".join([lines[0]] + lines[idx:])
-        return json.dumps({"ok": False, "error": trimmed, "outputs": _xt_figures()})
+        return json.dumps({
+            "ok": False,
+            "error": trimmed,
+            "etype": type(exc).__name__,
+            "evalue": str(exc),
+            "outputs": _xt_figures(),
+        })
+
+def _xt_vars():
+    """Everything the user created, for the variable inspector."""
+    try:
+        import pandas as pd
+    except ImportError:
+        pd = None
+    out = []
+    for k, v in list(_g.items()):
+        if k.startswith("_") or k == "tables":
+            continue
+        if callable(v) or type(v).__name__ == "module":
+            continue
+        if pd is not None and isinstance(v, pd.DataFrame):
+            out.append({
+                "name": k,
+                "type": "table",
+                "detail": "{:,} rows x {} columns".format(len(v), len(v.columns)),
+                "columns": [str(c) for c in v.columns][:80],
+            })
+            continue
+        if pd is not None and isinstance(v, pd.Series):
+            out.append({"name": k, "type": "column", "detail": "{:,} values".format(len(v))})
+            continue
+        t = type(v).__name__
+        try:
+            detail = "{:,} items".format(len(v)) if t in ("list", "dict", "tuple", "set") else repr(v)
+        except Exception:
+            detail = t
+        out.append({"name": k, "type": t, "detail": detail[:120]})
+    return json.dumps(sorted(out, key=lambda d: d["name"]))
 `;
 
 self.onmessage = async (ev: MessageEvent<InMsg>) => {
@@ -131,21 +206,28 @@ self.onmessage = async (ev: MessageEvent<InMsg>) => {
       py.globals.set('_xt_code', msg.code);
       const started = performance.now();
       const raw = py.runPython('_xt_run_cell(_xt_code)') as string;
-      const parsed = JSON.parse(raw) as { ok: boolean; outputs: CellOut[]; error?: string };
+      const parsed = JSON.parse(raw) as { ok: boolean; outputs: CellOut[]; error?: string; etype?: string };
       self.postMessage({
         kind: 'cellResult',
         id: msg.id,
         ok: parsed.ok,
-        stdout: stdoutBuf.join('\n'),
+        // Batched chunks already carry their newlines — joining adds blank lines.
+        stdout: stdoutBuf.join(''),
         outputs: parsed.outputs,
         error: parsed.error,
+        etype: parsed.etype,
         elapsedMs: performance.now() - started,
       });
+    } else if (msg.kind === 'vars') {
+      if (!py) throw new Error('engine not initialised');
+      self.postMessage({ kind: 'vars', vars: JSON.parse(py.runPython('_xt_vars()') as string) });
     }
   } catch (e) {
     const base = { ok: false, error: e instanceof Error ? e.message : String(e) };
     if (msg.kind === 'runCell') {
-      self.postMessage({ kind: 'cellResult', id: msg.id, stdout: stdoutBuf.join('\n'), outputs: [], ...base });
+      self.postMessage({ kind: 'cellResult', id: msg.id, stdout: stdoutBuf.join(''), outputs: [], ...base });
+    } else if (msg.kind === 'vars') {
+      self.postMessage({ kind: 'vars', vars: [] });
     } else {
       self.postMessage({ kind: 'error', ...base });
     }
