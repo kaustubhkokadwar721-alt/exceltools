@@ -3,6 +3,11 @@
 ExcelTools processes spreadsheets **entirely on the user's device**. This document
 states what that means technically and how it is enforced and tested.
 
+> **Getting it approved?** [`SECURITY-APPROVAL.md`](SECURITY-APPROVAL.md) is the
+> same material written for a reviewing partner and an IT administrator, with
+> checks they can run themselves and an honest register of what is still open.
+> It currently discloses one open issue: the `xlsx` advisories in its §5.
+
 ## Data flow
 
 - Files are read with the browser File API and processed in-page (Web Workers for

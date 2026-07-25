@@ -1,6 +1,25 @@
 // Small DOM helpers shared across Phase 2 tool UIs. Keeps each tool file focused
 // on its logic rather than element plumbing.
 
+/**
+ * Escape text for interpolation into an HTML string.
+ *
+ * Most of this app builds DOM with `el()` below, which sets text through
+ * textContent and cannot inject markup. The handful of places that assemble
+ * HTML strings (the data grid's virtualised rows, the help panel, a few
+ * loading messages) must run every non-literal value through this first —
+ * file names and URL fragments are attacker-controlled. One shared copy so
+ * there is exactly one function to audit.
+ */
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   attrs: Record<string, string> = {},

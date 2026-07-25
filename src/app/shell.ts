@@ -3,6 +3,7 @@
 // theme; content is the real tool set.
 import { TOOLS, findTool, type ToolDef } from './registry';
 import { onRouteChange, navigate, type Route } from './router';
+import { escapeHtml } from '../ui/controls';
 import { toast } from '../ui/toast';
 import { iconTool } from '../ui/icons';
 
@@ -93,7 +94,7 @@ function renderRoute(content: HTMLElement, route: Route): void {
   const tool = findTool(route.id);
   setActiveNav(tool?.id ?? null);
   if (!tool) {
-    content.innerHTML = `<div class="tool-head"><h2>Unknown tool</h2></div><p class="tool-blurb">No tool called "${route.id}".</p>`;
+    content.innerHTML = `<div class="tool-head"><h2>Unknown tool</h2></div><p class="tool-blurb">No tool called "${escapeHtml(route.id)}".</p>`;
     return;
   }
   if (tool.status === 'planned' || !tool.mount) {

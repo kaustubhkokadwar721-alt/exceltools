@@ -4,6 +4,7 @@
 // no upper cap), double-click a handle to autofit the full loaded column, and
 // user widths persist for the session per column-set so re-renders keep them.
 // Shared by every tool that shows tabular results.
+import { escapeHtml } from './controls';
 import type { SheetData, CellValue } from '../core/types';
 
 const ROW_HEIGHT = 28; // px, must match CSS .grid-row height
@@ -273,10 +274,3 @@ function fmt(c: CellValue, numeric = false): string {
   return escapeHtml(String(c));
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
