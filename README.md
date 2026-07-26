@@ -39,7 +39,7 @@ fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 | **Merge** | Combine files — stack rows (aligned by column name) or keep each as a sheet |
 | **Split** | Split a sheet into many files by column value or row count → one `.zip` |
 | **Compare** | Diff two sheets on a key column: added / removed / changed / unchanged |
-| **Clean** | Trim, collapse spaces, fix case, numbers-from-text, drop blank rows/cols |
+| **Clean** | Trim, collapse spaces, fix case, numbers-from-text (Indian grouping, accounting negatives, ERP trailing minus, currency marks — unreadable figures are counted and shown), drop blank rows/cols |
 | **Dedupe** | Remove duplicate rows by chosen key columns, keeping first or last |
 | **Query (SQL)** | *(SQL engine)* Stage, rename and register sheets/tables, then run SQL — joins, filters, aggregation |
 | **Python notebook** | *(Python engine)* Notebook cells in the browser — pandas, matplotlib charts, `.ipynb` save/load, no Python install. Built for people who don't write Python: see below |

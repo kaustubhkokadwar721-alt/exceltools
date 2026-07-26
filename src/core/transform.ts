@@ -1,6 +1,7 @@
 // Pure data transforms shared by the Merge, Split, and Compare tools. No
 // SheetJS here — these operate on already-parsed SheetData, so they stay fast,
 // testable, and free of the heavy parser bundle.
+import { numberFromText, looksNumericButUnparsed } from './numtext';
 import type { SheetData, CellValue } from './types';
 
 export interface NamedSheet {
@@ -197,13 +198,20 @@ export interface DedupeResult {
  * (empty = use every column, i.e. exact whole-row match). `keep` chooses which
  * row of each duplicate group survives; original row order is preserved.
  */
+/** Field separator for composite keys — cannot occur in cell text. */
+const KEY_SEP = '\u0001';
+
 export function dedupeByKeys(
   sheet: SheetData,
   keyIndices: number[],
   keep: 'first' | 'last',
 ): DedupeResult {
   const cols = keyIndices.length ? keyIndices : sheet.headers.map((_, i) => i);
-  const sig = (r: CellValue[]) => cols.map((c) => normKey(r[c])).join('');
+  // Joined on a separator no spreadsheet cell can contain, written as an escape
+  // rather than a raw control byte so it survives review and editing. Joining on
+  // '' would make the key ambiguous across column boundaries: ("INV-1", "2ACME")
+  // and ("INV-12", "ACME") would both flatten to the same signature.
+  const sig = (r: CellValue[]) => cols.map((c) => normKey(r[c])).join(KEY_SEP);
 
   const counts = new Map<string, number>();
   for (const r of sheet.rows) {
@@ -262,14 +270,20 @@ export interface CleanResult {
   rowsRemoved: number;
   colsRemoved: number;
   numbersConverted: number;
+  /** Cells that look like numbers but were left as text, with a few examples.
+   *  Silence here would mean a total that is quietly short. */
+  numbersUnconverted: number;
+  unconvertedSamples: string[];
 }
 
-const NUMERIC_TEXT = /^-?\d{1,3}(?:,\d{3})+(?:\.\d+)?$|^-?\d+(?:\.\d+)?$/;
+const UNCONVERTED_SAMPLES = 5;
 
 /** Apply the selected cleaning operations, returning the new sheet + a tally. */
 export function cleanSheet(sheet: SheetData, opts: CleanOptions): CleanResult {
   let cellsChanged = 0;
   let numbersConverted = 0;
+  let numbersUnconverted = 0;
+  const unconvertedSamples: string[] = [];
 
   const transformCell = (v: CellValue): CellValue => {
     if (typeof v !== 'string') return v;
@@ -277,12 +291,19 @@ export function cleanSheet(sheet: SheetData, opts: CleanOptions): CleanResult {
     if (opts.trim) s = s.trim();
     if (opts.collapseSpaces) s = s.replace(/\s+/g, ' ');
     if (opts.caseMode !== 'none') s = applyCase(s, opts.caseMode);
-    if (opts.numbersFromText && NUMERIC_TEXT.test(s.trim())) {
-      const n = Number(s.trim().replace(/,/g, ''));
-      if (Number.isFinite(n)) {
+    if (opts.numbersFromText) {
+      const parsed = numberFromText(s);
+      if (parsed) {
         numbersConverted++;
-        if (n !== (v as unknown as number)) cellsChanged++;
-        return n;
+        cellsChanged++;
+        return parsed.value;
+      }
+      // Not parseable, but shaped like a figure — report rather than swallow.
+      if (looksNumericButUnparsed(s)) {
+        numbersUnconverted++;
+        if (unconvertedSamples.length < UNCONVERTED_SAMPLES && !unconvertedSamples.includes(s)) {
+          unconvertedSamples.push(s);
+        }
       }
     }
     if (s !== v) cellsChanged++;
@@ -320,6 +341,8 @@ export function cleanSheet(sheet: SheetData, opts: CleanOptions): CleanResult {
     rowsRemoved,
     colsRemoved,
     numbersConverted,
+    numbersUnconverted,
+    unconvertedSamples,
   };
 }
 

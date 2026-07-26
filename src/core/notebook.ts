@@ -232,8 +232,7 @@ export function fromIpynb(json: string): NotebookCell[] {
 
 /** Real Jupyter writes colour codes into tracebacks; strip them for display. */
 function stripAnsi(s: string): string {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/\[[0-9;]*m/g, '');
+  return s.replace(/\u001b\[[0-9;]*m/g, '');
 }
 
 /** Tiny markdown renderer for markdown cells: headings, bold, italic, inline

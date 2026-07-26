@@ -88,7 +88,7 @@ export const TOOLS: ToolDef[] = [
     status: 'ready',
     help: [
       'Add a file and choose which fixes to apply.',
-      'Trim and case options normalise text; numbers-from-text turns "1,000" into a real number.',
+      'Trim and case options normalise text; numbers-from-text turns figures stored as text into real numbers — Indian grouping ("1,00,000"), accounting negatives ("(1,000)"), ERP trailing minus ("1000-") and currency marks ("₹500"). Anything ambiguous is left alone and counted, because a figure left as text is silently missing from every total.',
       'Select Clean & preview, then download.',
     ],
     helpNote: 'Cleaning makes lookups, merges and comparisons reliable.',

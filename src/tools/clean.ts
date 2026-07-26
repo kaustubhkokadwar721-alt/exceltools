@@ -86,7 +86,7 @@ function renderConfig(root: HTMLElement): void {
   const toggles = el('div', { class: 'clean-toggles' }, [
     toggle('trim', 'Trim whitespace', 'remove leading/trailing spaces'),
     toggle('collapseSpaces', 'Collapse inner spaces', 'multiple spaces → one'),
-    toggle('numbersFromText', 'Numbers from text', '"1,000" → 1000'),
+    toggle('numbersFromText', 'Numbers from text', '"1,00,000", "(1,000)", "1000-", "₹500" → real numbers'),
     toggle('removeBlankRows', 'Remove blank rows', 'drop fully empty rows'),
     toggle('removeBlankCols', 'Remove blank columns', 'drop empty, unnamed columns'),
   ]);
@@ -122,6 +122,19 @@ function renderResult(root: HTMLElement, result: CleanResult): void {
       chip('Columns removed', result.colsRemoved, result.colsRemoved ? 'c-a' : ''),
     ]),
   );
+
+  // A figure left as text is excluded from every later SUM without an error, so
+  // the ones we could not read are worth more attention than the ones we could.
+  if (result.numbersUnconverted > 0) {
+    host.append(
+      el('div', { class: 'stage-expects' }, [
+        el('strong', {}, [`${result.numbersUnconverted.toLocaleString()} cells look like figures but stayed as text`]),
+        el('div', {}, [
+          `Totals will leave these out. Examples: ${result.unconvertedSamples.map((s) => `"${s}"`).join(', ')}.`,
+        ]),
+      ]),
+    );
+  }
 
   const { wrap: fmtWrap, select: fmtSel } = selectField(
     'Download as',

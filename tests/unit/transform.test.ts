@@ -161,3 +161,72 @@ describe('cleanSheet', () => {
     expect(r.sheet.rows[2][0]).toBe('Carol');
   });
 });
+
+describe('dedupeByKeys — composite keys', () => {
+  // Joining key parts on '' would flatten ("INV-1","2ACME") and ("INV-12","ACME")
+  // to the same signature, so one genuine invoice would vanish as a "duplicate".
+  it('does not collide across column boundaries', () => {
+    const s: SheetData = {
+      name: 'S',
+      headers: ['InvoiceNo', 'Vendor'],
+      rows: [
+        ['INV-1', '2ACME'],
+        ['INV-12', 'ACME'],
+      ],
+      totalRows: 2,
+    };
+    const r = dedupeByKeys(s, [0, 1], 'first');
+    expect(r.kept).toBe(2);
+    expect(r.removed).toBe(0);
+    expect(r.duplicateGroups).toBe(0);
+  });
+
+  it('still folds case and whitespace within each key part', () => {
+    const s: SheetData = {
+      name: 'S',
+      headers: ['A', 'B'],
+      rows: [
+        ['Acme', 'X'],
+        [' acme ', 'x'],
+      ],
+      totalRows: 2,
+    };
+    expect(dedupeByKeys(s, [0, 1], 'first').kept).toBe(1);
+  });
+});
+
+describe('cleanSheet — figures that stayed as text', () => {
+  const withValues = (values: string[]): SheetData => ({
+    name: 'S',
+    headers: ['Amount'],
+    rows: values.map((v) => [v]),
+    totalRows: values.length,
+  });
+  const opts = {
+    trim: true,
+    collapseSpaces: false,
+    caseMode: 'none' as const,
+    numbersFromText: true,
+    removeBlankRows: false,
+    removeBlankCols: false,
+  };
+
+  it('converts the accounting formats Excel exports actually use', () => {
+    const r = cleanSheet(withValues(['1,00,000', '(1,000)', '1000-', '₹500']), opts);
+    expect(r.sheet.rows.map((row) => row[0])).toEqual([100000, -1000, -1000, 500]);
+    expect(r.numbersConverted).toBe(4);
+    expect(r.numbersUnconverted).toBe(0);
+  });
+
+  it('reports figures it could not read instead of passing them over', () => {
+    const r = cleanSheet(withValues(['1,000', '1.000,50', '12,3456']), opts);
+    expect(r.numbersConverted).toBe(1);
+    expect(r.numbersUnconverted).toBe(2);
+    expect(r.unconvertedSamples).toEqual(['1.000,50', '12,3456']);
+  });
+
+  it('does not count ordinary text as a failed number', () => {
+    const r = cleanSheet(withValues(['Acme Traders', 'N/A']), opts);
+    expect(r.numbersUnconverted).toBe(0);
+  });
+});
