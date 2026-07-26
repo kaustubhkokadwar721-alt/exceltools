@@ -11,17 +11,17 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
-import { attachHelp } from '../ui/help';
 import { el, button } from '../ui/controls';
 import { createCodeEditor, type CodeEditor } from '../ui/codeeditor';
-import { setHeadCompact, createSourceBar } from '../ui/toolchrome';
+import { createSourceBar } from '../ui/toolchrome';
+import { openDataPanel, setCrumb } from '../app/shell';
 import { tableActions, imageActions } from '../ui/resultactions';
 import { tableSetupCard, type SourceSetup } from '../ui/source-setup';
 import { parseFile, serializeWorkbook } from '../core/parser';
 import { resolveSource } from '../core/source';
 import { downloadBlob, pickFiles } from '../core/fileio';
 import { toIpynb, fromIpynb, titleFromIpynb, renderMarkdown, type NotebookCell } from '../core/notebook';
-import { inferColumnKind, schemaTextForAI } from '../core/schema';
+import { inferColumnKind, profileColumn, describeColumn, schemaTextForAI } from '../core/schema';
 import { explainPythonError } from '../core/pyerrors';
 import { snippetsFor, columnChoices, defaultValues, type Snippet } from '../core/snippets';
 import { saveDraft, loadDraft, clearDraft, describeAge, isDraftEnabled, setDraftEnabled } from '../core/nbstore';
@@ -102,23 +102,15 @@ export function mountPython(host: HTMLElement): void {
   state.cells = [newCell('code')];
 
   host.innerHTML = `
-    <div class="tool-head"><h2>Python notebook</h2>
-    <p class="tool-blurb">Analyse your spreadsheets with Python — in this browser, with no Python installed. Files never leave this device.</p></div>
     <div class="tool-body">
       <div id="restore"></div>
       <div id="dz"></div>
       <div id="setup"></div>
-      <div class="query-work">
-        <div class="query-main">
-          <div id="nbtools"></div>
-          <div id="recipes" class="nb-recipes" hidden></div>
-          <div id="nb"></div>
-        </div>
-        <aside class="query-schema" id="schema" aria-label="Your tables and variables"></aside>
-      </div>
+      <div id="nbtools"></div>
+      <div id="recipes" class="nb-recipes" hidden></div>
+      <div id="nb"></div>
     </div>`;
 
-  attachHelp(host, 'python');
   renderDropzone(true);
   renderToolbar();
   renderAllCells();
@@ -229,7 +221,6 @@ function renderSetup(): void {
       updateEmptyState();
       // You are working now — the onboarding chrome gets out of the way.
       renderDropzone(false);
-      setHeadCompact(root(), true);
       toast(`${state.registered.length} table(s) ready to use.`, 'success', 3000);
     } catch (e) {
       host.innerHTML = '';
@@ -289,7 +280,12 @@ function railTabs(): HTMLElement {
 }
 
 function renderRail(): void {
-  const host = q('#schema');
+  const host = openDataPanel({
+    title: 'Your data',
+    label: 'Your tables and variables',
+    actionLabel: state.registered.length ? '＋ Add files' : undefined,
+    onAction: () => renderDropzone(true),
+  });
   host.innerHTML = '';
   host.append(railTabs());
 
@@ -302,7 +298,7 @@ function renderRail(): void {
     host.append(
       el('div', { class: 'rail-empty' }, [
         el('p', {}, ['No tables yet.']),
-        el('p', {}, ['Drop a spreadsheet above and select Register. Each sheet becomes a table you can use by name.']),
+        el('p', {}, ['Add a spreadsheet and select Register. Each sheet becomes a table you can use by name.']),
       ]),
     );
     return;
@@ -361,9 +357,12 @@ function renderRail(): void {
         ]),
         el('div', { class: 'schema-cols-list' },
           r.sheet.headers.map((h, i) => {
+            // Kind, blanks and distinct values: enough to know before you total
+            // a column whether anything is missing from it.
+            const p = profileColumn(r.sheet, i);
             const col = el('div', { class: 'schema-col', 'data-name': h.toLowerCase(), title: `Insert "${h}" into the cell you are editing` }, [
               el('span', { class: 'schema-col-name' }, [h]),
-              el('span', { class: 'schema-col-type' }, [inferColumnKind(r.sheet, i)]),
+              el('span', { class: `schema-col-type${p.blanks > 0 ? ' has-blanks' : ''}` }, [describeColumn(p)]),
             ]);
             // Clicking a column drops its name into the focused cell — no typing,
             // no transcription errors on headings with spaces or odd casing.
@@ -471,8 +470,10 @@ function renderToolbar(): void {
     maxlength: '80',
   }) as HTMLInputElement;
   titleInput.value = state.title;
+  setCrumb(state.title);
   titleInput.addEventListener('input', () => {
     state.title = titleInput.value;
+    setCrumb(state.title);
     scheduleSave();
   });
 

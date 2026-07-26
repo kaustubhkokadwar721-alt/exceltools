@@ -450,19 +450,25 @@ test('notebook: drafts can be switched off, which deletes the stored one', async
 test('notebook: onboarding chrome collapses once tables are registered', async ({ page }) => {
   test.setTimeout(240_000);
   await page.goto('/#/tool/python');
-  // Before: full drop area, full heading.
+  // Before: full drop area, and nothing loaded to show in the data panel.
   await expect(page.locator('.dropzone')).toBeVisible();
-  await expect(page.locator('.tool-head .tool-blurb')).toBeVisible();
+  await expect(page.locator('#datapanel .rail-empty')).toContainText('No tables yet');
 
   await bootNotebook(page);
 
-  // After: a one-line summary of what is loaded, and a compact heading.
+  // After: a one-line summary of what is loaded, and the panel describing it.
   await expect(page.locator('.dropzone')).toHaveCount(0);
   await expect(page.locator('.src-bar')).toContainText('1 table ready');
   await expect(page.locator('.src-chip')).toContainText('payroll');
   await expect(page.locator('.src-chip')).toContainText('30 rows');
-  await expect(page.locator('.tool-head')).toHaveClass(/is-compact/);
-  await expect(page.locator('.tool-head .tool-blurb')).toBeHidden();
+  // The panel describes the registered table. The heading carries the engine's
+  // name for it (df_payroll with pandas, payroll without), so assert on the
+  // columns, which are the same either way — and on the profile the panel adds.
+  await expect(page.locator('#datapanel .schema-block')).toHaveCount(1);
+  await expect(page.locator('#datapanel .schema-block')).toContainText('payroll');
+  await expect(page.locator('#datapanel .schema-col')).toHaveCount(3);
+  await expect(page.locator('#datapanel .schema-col').nth(1)).toContainText('Dept');
+  await expect(page.locator('#datapanel .schema-col').nth(1)).toContainText('3 distinct');
 
   // And it is reversible — the drop area comes back on demand.
   await page.locator('.src-bar-add').click();

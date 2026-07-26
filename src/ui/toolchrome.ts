@@ -1,23 +1,10 @@
-// Chrome that gets out of the way once you start working.
+// The drop area is onboarding: it matters for the first thirty seconds and then
+// it is just eating the screen. Once files are loaded it becomes a one-line
+// summary of what is there, with a way back.
 //
-// A tool's heading, blurb, help panel and drop area are all onboarding: they
-// matter for the first thirty seconds and then they are just eating the screen.
-// On a 1080px laptop they push the actual work below the fold. These helpers
-// shrink the header and swap the drop area for a one-line summary of what is
-// loaded, with a way back to both.
+// The heading and help block used to be collapsed here too; they now live in
+// the app bar and its help popover, so there is nothing left to shrink.
 import { el, button } from './controls';
-
-/**
- * Collapse (or restore) a tool's heading block. Compact keeps the title as an
- * anchor, drops the blurb, and closes the help panel — all reversible, and the
- * help summary stays clickable.
- */
-export function setHeadCompact(root: HTMLElement, compact: boolean): void {
-  const head = root.querySelector<HTMLElement>('.tool-head');
-  if (!head) return;
-  head.classList.toggle('is-compact', compact);
-  if (compact) head.querySelector('details.rgy-help')?.removeAttribute('open');
-}
 
 export interface SourceBarItem {
   name: string;

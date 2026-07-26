@@ -17,6 +17,37 @@ async function readDownload(dl: import('@playwright/test').Download): Promise<Bu
   return readFile(path);
 }
 
+// The point of the fixed-height shell: on the commonest work-laptop viewport,
+// no tool pushes its first control below the fold before you have done
+// anything. Regression guard — chrome creeps back one block at a time.
+test('every tool fits the screen on a 1366x768 laptop', async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 648 });
+  for (const id of ['', 'convert', 'merge', 'split', 'compare', 'clean', 'dedupe', 'query', 'pivot', 'python']) {
+    await page.goto(id ? `/#/tool/${id}` : '/#/');
+    await page.waitForSelector('.app-shell');
+    const m = await page.evaluate(() => ({
+      docScroll: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+      bodyScroll: document.body.scrollHeight - document.body.clientHeight,
+      wide: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    }));
+    expect(m, `${id || 'home'} scrolls the page`).toEqual({ docScroll: 0, bodyScroll: 0, wide: 0 });
+  }
+});
+
+// Losing the always-visible tool list is the cost of the app bar, so the
+// switcher has to carry discovery: every tool, with what it does.
+test('the tool switcher lists every tool with its description', async ({ page }) => {
+  await page.goto('/#/tool/convert');
+  await expect(page.locator('#switchmenu')).toBeHidden();
+  await page.click('#switch');
+  const items = page.locator('#switchmenu .switch-item');
+  await expect(items).toHaveCount(9);
+  await expect(page.locator('#switchmenu .switch-item[data-id="python"] .switch-blurb')).toContainText('pandas');
+  await expect(page.locator('#switchmenu .switch-item.active')).toContainText('Convert');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#switchmenu')).toBeHidden();
+});
+
 test('Convert: xlsx → JSON', async ({ page }) => {
   await page.goto('/#/tool/convert');
   await dropXlsx(page, '.dropzone', 'jan.xlsx', JAN);
@@ -54,7 +85,9 @@ test('Compare: classifies add/remove/change/unchanged', async ({ page }) => {
   await page.goto('/#/tool/compare');
   await dropXlsx(page, '#dzA .dropzone', 'a.xlsx', CMP_A);
   await dropXlsx(page, '#dzB .dropzone', 'b.xlsx', CMP_B);
-  await page.click('button:has-text("Compare")');
+  // Scoped to the work surface: the app bar's tool switcher is also a button
+  // labelled with the current tool's name.
+  await page.click('#content button:has-text("Compare")');
   await page.waitForSelector('.diff-summary');
   const chips = (await page.locator('.diff-chip .chip-n').allTextContents()).map((s) => s.trim());
   expect(chips).toEqual(['1', '1', '1', '1']); // onlyA, onlyB, changed, same
