@@ -5,7 +5,6 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
-import { attachHelp } from '../ui/help';
 import { el, button, selectField, radioGroup } from '../ui/controls';
 import { parseFile, serializeSheet, serializeWorkbook } from '../core/parser';
 import { downloadBlob } from '../core/fileio';
@@ -29,8 +28,6 @@ export function mountMerge(root: HTMLElement): void {
   mode = 'stack';
   addSource = true;
   root.innerHTML = `
-    <div class="tool-head"><h2>Merge</h2>
-    <p class="tool-blurb">Combine multiple files into one. Stack their rows, or keep each as a separate sheet.</p></div>
     <div class="tool-body">
       <div id="dz"></div>
       <div id="files"></div>
@@ -48,7 +45,6 @@ export function mountMerge(root: HTMLElement): void {
   );
   renderFiles(root);
   renderOptions(root);
-  attachHelp(root, 'merge');
 }
 
 async function addFiles(root: HTMLElement, files: File[]): Promise<void> {

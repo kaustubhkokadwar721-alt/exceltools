@@ -63,7 +63,7 @@ controls, and they are genuinely well-founded:
 - **Untrusted HTML from opened notebooks is never rendered** — the `.ipynb`
   reader deliberately ignores `text/html` from foreign files and takes only
   plain text, images and its own structured format.
-- **CI runs on every change**: typecheck, 111 unit tests, 41 end-to-end tests
+- **CI runs on every change**: typecheck, 157 unit tests, 41 end-to-end tests
   including the no-exfiltration guard.
 
 ---
@@ -181,6 +181,35 @@ the analysis, the build that produced it (`__APP_VERSION__` + build date, stampe
 at build time so it cannot go stale), the export timestamp, and the source tables
 with row counts. Saved `.ipynb` files carry the same build identity in metadata.
 Not a vulnerability — a reperformance control, and reviewers ask for it.
+
+### FIXED-9 — HTML export carried live markup out of a cell · *was: High*
+
+`XLSX.utils.sheet_to_html()` escapes a cell's **text** but copies the raw value
+into a `data-v` attribute. A cell reading `"><img src=x onerror=...>` therefore
+closed the attribute and injected a live element into the exported file:
+
+```html
+<td data-t="s" data-v=""><img src=x onerror=alert(1)>" id="sjs-B4">&quot;&gt;...
+```
+
+The chain is an ordinary working day, not an exotic one: a client emails a
+spreadsheet (T1) → the auditor converts it to HTML to share the table → opens the
+export to check it. That is script execution from `file://` on a work PC. It is
+the same class of defect as CSV formula injection (FIXED-4), and worse in one
+respect — Excel at least shows a warning before evaluating a formula, whereas a
+browser opens the file and runs the markup with nothing to click through.
+
+**Fixed:** `sheet_to_html` is no longer used. `src/core/serialize.ts` writes the
+table itself, escaping every value — headers, cells and the sheet name, which
+reaches `<title>` — through the shared `escapeHtml` in `src/core/escape.ts`. The
+output carries no `data-*` or `id` attributes at all, so there is no second place
+for a value to live unescaped. Escaping moved to `core/` so the parser worker and
+the DOM code share one implementation rather than two that can drift.
+
+Serialization also moved out of the worker into `core/serialize.ts`, which is
+what makes it directly testable: 18 unit tests, including the attribute-breakout
+payload above, plus an end-to-end test that converts a hostile workbook and
+asserts the downloaded file contains no `<img`, no `<script>` and no `data-v`.
 
 ### OPEN-1 — `xlsx` carries two published advisories · **High** · *blocks approval*
 
@@ -310,8 +339,13 @@ tab during real use.
 
 ---
 
-**Audit date:** 25 July 2026 · **Fixed:** 8 · **Open:** 4
-(1 High, 2 Medium, 1 Low) · **Blocking approval:** OPEN-1.
+**Audit date:** 25 July 2026 · **Reviewed again:** 26 July 2026
+**Fixed:** 9 · **Open:** 4 (1 High, 2 Medium, 1 Low) · **Blocking approval:** OPEN-1.
+
+The 26 July pass was a full read of the repository rather than a diff review. It
+found one High (FIXED-9, HTML export) in code that had been shipping since Phase
+2 — a reminder that the export paths, not the parsing ones, are where a defect
+leaves the machine.
 
 Remaining open: **OPEN-1** (xlsx advisories — High, needs a machine that can
 reach the vendor CDN), **OPEN-2** (SHA-pin the GitHub Actions), **OPEN-5**

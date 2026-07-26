@@ -4,7 +4,6 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
-import { attachHelp } from '../ui/help';
 import { el, button, selectField } from '../ui/controls';
 import { parseFile, serializeSheet } from '../core/parser';
 import { downloadBlob } from '../core/fileio';
@@ -25,8 +24,6 @@ export function mountCompare(root: HTMLElement): void {
   A = null;
   B = null;
   root.innerHTML = `
-    <div class="tool-head"><h2>Compare</h2>
-    <p class="tool-blurb">Diff two spreadsheets on a shared key column — see what was added, removed, and changed.</p></div>
     <div class="tool-body">
       <div class="compare-drops">
         <div class="compare-slot"><div class="slot-label">File A (baseline)</div><div id="dzA"></div></div>
@@ -38,7 +35,6 @@ export function mountCompare(root: HTMLElement): void {
 
   mountSlot(root, 'A');
   mountSlot(root, 'B');
-  attachHelp(root, 'compare');
 }
 
 function mountSlot(root: HTMLElement, side: 'A' | 'B'): void {

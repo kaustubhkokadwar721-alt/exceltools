@@ -4,8 +4,9 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
-import { attachHelp } from '../ui/help';
+import { openDataPanel, closeDataPanel } from '../app/shell';
 import { el, button, selectField } from '../ui/controls';
+import { createSourceBar } from '../ui/toolchrome';
 import { tableSetupCard, type SourceSetup } from '../ui/source-setup';
 import { parseFile, serializeSheet } from '../core/parser';
 import { resolveSource } from '../core/source';
@@ -38,27 +39,41 @@ export function mountQuery(root: HTMLElement): void {
   pendingSheets = [];
   engineReady = false;
   root.innerHTML = `
-    <div class="tool-head"><h2>Query (SQL)</h2>
-    <p class="tool-blurb">Drop spreadsheets, then run SQL over them — joins, filters, aggregation. Powered by DuckDB-WASM, fully offline.</p></div>
     <div class="tool-body">
       <div id="dz"></div>
       <div id="setup"></div>
-      <div class="query-work">
-        <div class="query-main">
-          <div id="editor"></div>
-          <div id="result"></div>
-        </div>
-        <aside class="query-schema" id="schema" aria-label="Table schema reference"></aside>
-      </div>
+      <div id="editor"></div>
+      <div id="result"></div>
     </div>`;
 
-  attachHelp(root, 'query');
-  root.querySelector('#dz')!.append(
-    createDropzone({
-      multiple: true,
-      onError: (m) => toast(m, 'error'),
-      onWarning: (m) => toast(m, 'warning', 7000),
-      onFiles: (files) => addFiles(root, files),
+  renderDropzone(root, true);
+}
+
+/**
+ * The drop area is onboarding. Once tables are registered it shrinks to a line
+ * saying what is loaded, which is ~200px back for the editor and its results —
+ * with "Add more files" to bring it back. Same collapse the notebook uses.
+ */
+function renderDropzone(root: HTMLElement, expanded: boolean): void {
+  const host = root.querySelector<HTMLElement>('#dz')!;
+  host.innerHTML = '';
+  if (expanded || !tables.length) {
+    host.append(
+      createDropzone({
+        multiple: true,
+        onError: (m) => toast(m, 'error'),
+        onWarning: (m) => toast(m, 'warning', 7000),
+        onFiles: (files) => addFiles(root, files),
+      }),
+    );
+    return;
+  }
+  host.append(
+    createSourceBar({
+      summary: `${tables.length} table${tables.length === 1 ? '' : 's'} ready`,
+      items: tables.map((t) => ({ name: t.name, meta: `${t.rows.toLocaleString()} rows` })),
+      addLabel: '＋ Add more files',
+      onAdd: () => renderDropzone(root, true),
     }),
   );
 }
@@ -85,7 +100,7 @@ async function addFiles(root: HTMLElement, files: File[]): Promise<void> {
   }
   engineReady = true;
   renderSetup(root);
-  renderSchema(root);
+  void renderSchema();
   renderEditor(root);
 }
 
@@ -141,8 +156,10 @@ function renderSetup(root: HTMLElement): void {
     pendingTables = [];
     pendingSheets = [];
     renderSetup(root);
-    await renderSchema(root);
+    await renderSchema();
     renderEditor(root);
+    // You are working now — the onboarding chrome gets out of the way.
+    renderDropzone(root, false);
     toast('Tables registered.', 'success', 3000);
   });
 
@@ -168,10 +185,13 @@ function renderSetup(root: HTMLElement): void {
   host.append(...children);
 }
 
-async function renderSchema(root: HTMLElement): Promise<void> {
-  const host = root.querySelector<HTMLElement>('#schema')!;
+async function renderSchema(): Promise<void> {
+  if (!tables.length) {
+    closeDataPanel();
+    return;
+  }
+  const host = openDataPanel({ title: 'Your data', label: 'Table schema reference' });
   host.innerHTML = '';
-  if (!tables.length) return;
 
   // Real types from DuckDB — the reference users paste into an AI assistant.
   const duck = await import('../core/duckdb');
@@ -199,8 +219,10 @@ async function renderSchema(root: HTMLElement): Promise<void> {
     }
   }, 'btn-ghost');
 
+  // The panel is already titled "Your data"; this says the one thing the title
+  // does not — that these names are what your SQL has to say.
   const head = el('div', { class: 'schema-head' }, [
-    el('div', { class: 'file-list-head' }, ['Available tables (use these names in your SQL)']),
+    el('div', { class: 'panel-hint' }, ['Use these names in your SQL']),
     copyBtn,
   ]);
 

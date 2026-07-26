@@ -66,7 +66,8 @@ export function createDataGrid(sheet: SheetData, opts: DataGridOptions = {}): HT
   });
   const isNumeric = (ci: number): boolean => !!opts.formatNumbers && numericCols[ci];
 
-  const sig = sheet.headers.join('');
+  // An escape, not a raw control byte, so the separator stays visible in review.
+  const sig = sheet.headers.join('\u0001');
   const fitWidth = (ci: number, rowLimit: number, cap: number): number => {
     // Headers render uppercase with letter-spacing → ~35% wider than body text.
     let chars = Math.ceil(String(sheet.headers[ci]).length * 1.35) + 2;

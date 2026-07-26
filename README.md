@@ -39,7 +39,7 @@ fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 | **Merge** | Combine files — stack rows (aligned by column name) or keep each as a sheet |
 | **Split** | Split a sheet into many files by column value or row count → one `.zip` |
 | **Compare** | Diff two sheets on a key column: added / removed / changed / unchanged |
-| **Clean** | Trim, collapse spaces, fix case, numbers-from-text, drop blank rows/cols |
+| **Clean** | Trim, collapse spaces, fix case, numbers-from-text (Indian grouping, accounting negatives, ERP trailing minus, currency marks — unreadable figures are counted and shown), drop blank rows/cols |
 | **Dedupe** | Remove duplicate rows by chosen key columns, keeping first or last |
 | **Query (SQL)** | *(SQL engine)* Stage, rename and register sheets/tables, then run SQL — joins, filters, aggregation |
 | **Python notebook** | *(Python engine)* Notebook cells in the browser — pandas, matplotlib charts, `.ipynb` save/load, no Python install. Built for people who don't write Python: see below |
@@ -119,8 +119,9 @@ accountant can actually use it.
   notebook doesn't mean adding at the end and pressing ↑ four times.
 - **A Stop button that works**, implemented honestly: it restarts the engine and
   re-registers your tables, and tells you the variables are gone.
-- **Click a column name** in the right-hand list to drop its exact spelling into
-  your code — no transcribing headings with trailing spaces.
+- **Click a column name** in the **Your data** panel to drop its exact spelling
+  into your code — no transcribing headings with trailing spaces. Each column
+  shows its kind and how many cells are blank, so you know before you total it.
 - **In memory** tab shows every table and value Python is holding; the column
   list filters when a table is wide.
 - Colour is semantic and always paired with text: a cell's left stripe is green
@@ -217,14 +218,19 @@ host or network share also works. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 
 ## Design
 
-Warm "register" theme — a left sidebar (brand, tier-grouped nav, engine +
-privacy cards) and one working surface. Typography pairs **Newsreader** (serif
-display), **Instrument Sans** (interface) and **Spline Sans Mono** (data/IDs);
-all three **self-hosted** (offline-safe, CSP-clean). Colour is semantic: green =
-primary action / trust, gold = the SQL-engine tier and review, red = error —
-always paired with text. Data grids auto-fit column widths and support
-drag-to-resize. Verified at desktop, laptop, tablet and 390 px mobile with no
-horizontal overflow.
+Warm "register" theme. The shell is **exactly one viewport tall and never
+scrolls**: a slim app bar (brand, tool switcher, file context, status, privacy
+badge, help), a **Your data** panel on the left, and one working surface — each
+scrolling inside itself. Density follows viewport *height*, so a short laptop
+panel tightens up without anyone configuring it. The nine tools live behind the
+switcher, which lists them all with descriptions; a Playwright test asserts that
+no tool pushes its first control below the fold at 1366×768. Typography pairs
+**Newsreader** (serif display), **Instrument Sans** (interface) and **Spline
+Sans Mono** (data/IDs); all three **self-hosted** (offline-safe, CSP-clean).
+Colour is semantic: green = primary action / trust, gold = the SQL-engine tier
+and review, amber = a column with blanks in it, red = error — always paired with
+text. Data grids auto-fit column widths and support drag-to-resize. Verified at
+desktop, laptop, tablet and 390 px mobile with no horizontal overflow.
 
 ## Roadmap
 

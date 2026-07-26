@@ -17,6 +17,87 @@ async function readDownload(dl: import('@playwright/test').Download): Promise<Bu
   return readFile(path);
 }
 
+// The point of the fixed-height shell: on the commonest work-laptop viewport,
+// no tool pushes its first control below the fold before you have done
+// anything. Regression guard — chrome creeps back one block at a time.
+test('every tool fits the screen on a 1366x768 laptop', async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 648 });
+  for (const id of ['', 'convert', 'merge', 'split', 'compare', 'clean', 'dedupe', 'query', 'pivot', 'python']) {
+    await page.goto(id ? `/#/tool/${id}` : '/#/');
+    await page.waitForSelector('.app-shell');
+    const m = await page.evaluate(() => ({
+      docScroll: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+      bodyScroll: document.body.scrollHeight - document.body.clientHeight,
+      wide: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    }));
+    expect(m, `${id || 'home'} scrolls the page`).toEqual({ docScroll: 0, bodyScroll: 0, wide: 0 });
+  }
+});
+
+// Losing the always-visible tool list is the cost of the app bar, so the
+// switcher has to carry discovery: every tool, with what it does.
+test('the tool switcher lists every tool with its description', async ({ page }) => {
+  await page.goto('/#/tool/convert');
+  await expect(page.locator('#switchmenu')).toBeHidden();
+  await page.click('#switch');
+  const items = page.locator('#switchmenu .switch-item');
+  await expect(items).toHaveCount(9);
+  await expect(page.locator('#switchmenu .switch-item[data-id="python"] .switch-blurb')).toContainText('pandas');
+  await expect(page.locator('#switchmenu .switch-item.active')).toContainText('Convert');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#switchmenu')).toBeHidden();
+});
+
+// The data panel is what tells you what you are working on before you touch it:
+// the sheets in the file, each column's kind, and — the one that changes an
+// answer — how many cells in it are blank.
+// A crafted cell must not become live markup in a file the auditor then opens
+// from disk. SheetJS's own sheet_to_html left the raw value in a data-v
+// attribute, which a cell could close; we write the table ourselves instead.
+test('Convert: an HTML export cannot carry markup out of a cell', async ({ page }) => {
+  const HOSTILE = xlsxBase64([
+    ['Note'],
+    ['"><img src=x onerror=alert(1)>'],
+    ['<script>alert(2)</script>'],
+  ]);
+  await page.goto('/#/tool/convert');
+  await dropXlsx(page, '.dropzone', 'hostile.xlsx', HOSTILE);
+  await page.waitForSelector('#content .config-bar');
+  await page.selectOption('#content .config-bar select >> nth=1', 'html');
+  const [dl] = await Promise.all([
+    page.waitForEvent('download'),
+    page.click('#content button:has-text("Convert & download")'),
+  ]);
+  const html = (await readDownload(dl)).toString('utf8');
+  expect(html).not.toContain('<img');
+  expect(html).not.toContain('<script>alert');
+  expect(html).toContain('&lt;script&gt;');
+  expect(html).not.toMatch(/data-v=/);
+});
+
+test('Convert: the data panel profiles the file it opened', async ({ page }) => {
+  const WITH_GAPS = xlsxBase64([
+    ['Entity', 'Status', 'TaxAmount'],
+    ['Acme', 'Filed', 100],
+    ['Bharat', 'Late', null],
+    ['Acme', 'Filed', 300],
+  ]);
+  await page.goto('/#/tool/convert');
+  await dropXlsx(page, '.dropzone', 'returns.xlsx', WITH_GAPS);
+  await page.waitForSelector('#datapanel .schema-col');
+
+  await expect(page.locator('#datapanel .panel-file')).toHaveText('returns.xlsx');
+  await expect(page.locator('#datapanel .schema-col')).toHaveCount(3);
+  await expect(page.locator('#datapanel .schema-col').nth(1)).toContainText('2 distinct');
+  // The blank count is the reason the panel exists; it must be visible and
+  // distinguishable, not just present in the DOM.
+  const blanks = page.locator('#datapanel .schema-col-type.has-blanks');
+  await expect(blanks).toHaveCount(1);
+  await expect(blanks).toContainText('1 blank');
+  // And the open file is named in the app bar.
+  await expect(page.locator('#crumb')).toHaveText('returns.xlsx');
+});
+
 test('Convert: xlsx → JSON', async ({ page }) => {
   await page.goto('/#/tool/convert');
   await dropXlsx(page, '.dropzone', 'jan.xlsx', JAN);
@@ -54,7 +135,9 @@ test('Compare: classifies add/remove/change/unchanged', async ({ page }) => {
   await page.goto('/#/tool/compare');
   await dropXlsx(page, '#dzA .dropzone', 'a.xlsx', CMP_A);
   await dropXlsx(page, '#dzB .dropzone', 'b.xlsx', CMP_B);
-  await page.click('button:has-text("Compare")');
+  // Scoped to the work surface: the app bar's tool switcher is also a button
+  // labelled with the current tool's name.
+  await page.click('#content button:has-text("Compare")');
   await page.waitForSelector('.diff-summary');
   const chips = (await page.locator('.diff-chip .chip-n').allTextContents()).map((s) => s.trim());
   expect(chips).toEqual(['1', '1', '1', '1']); // onlyA, onlyB, changed, same

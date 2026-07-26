@@ -56,7 +56,7 @@ export async function registerSheet(tableName: string, sheet: SheetData): Promis
   const conn = await db.connect();
   try {
     await conn.query(
-      `CREATE OR REPLACE TABLE "${tableName}" AS ` +
+      `CREATE OR REPLACE TABLE "${esc(tableName)}" AS ` +
         `SELECT * FROM read_csv_auto('${fileName}', header=true, sample_size=-1)`,
     );
   } finally {
@@ -99,6 +99,9 @@ function columnDuckType(values: CellValue[]): 'DOUBLE' | 'BOOLEAN' | 'VARCHAR' {
   return 'VARCHAR';
 }
 
+// Every identifier interpolated into SQL goes through this, including ones that
+// are sanitised upstream by tableIdent(). Applying it at only some sites is how a
+// future caller that skips the sanitiser turns into an injection.
 const esc = (id: string) => id.replace(/"/g, '""');
 
 export interface QueryOutcome {
@@ -151,7 +154,7 @@ export async function describeTables(): Promise<TableSchema[]> {
     }
     const out: TableSchema[] = [];
     for (const [table, columns] of byTable) {
-      const cnt = await conn.query(`SELECT COUNT(*) AS n FROM "${table.replace(/"/g, '""')}"`);
+      const cnt = await conn.query(`SELECT COUNT(*) AS n FROM "${esc(table)}"`);
       const n = Number((cnt.toArray()[0] as Record<string, unknown>).n);
       out.push({ table, columns, rows: n });
     }
@@ -187,7 +190,7 @@ export async function resetTables(): Promise<void> {
     const tables = await conn.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='main'`);
     for (const row of tables.toArray()) {
       const name = (row as Record<string, unknown>).table_name as string;
-      await conn.query(`DROP TABLE IF EXISTS "${name}"`);
+      await conn.query(`DROP TABLE IF EXISTS "${esc(name)}"`);
     }
   } finally {
     await conn.close();
@@ -210,12 +213,14 @@ function normalize(v: unknown): CellValue {
 }
 
 function toCSV(sheet: SheetData): string {
-  const esc = (v: CellValue) => {
+  // Named apart from the module's `esc`, which quotes SQL identifiers — two
+  // escapers with the same name and different rules is a bug waiting to happen.
+  const csvField = (v: CellValue) => {
     if (v === null || v === undefined) return '';
     const s = String(v);
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const head = sheet.headers.map(esc).join(',');
-  const body = sheet.rows.map((r) => sheet.headers.map((_, i) => esc(r[i] ?? null)).join(',')).join('\n');
+  const head = sheet.headers.map(csvField).join(',');
+  const body = sheet.rows.map((r) => sheet.headers.map((_, i) => csvField(r[i] ?? null)).join(',')).join('\n');
   return body ? `${head}\n${body}` : head;
 }

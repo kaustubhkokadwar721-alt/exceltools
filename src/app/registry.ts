@@ -88,7 +88,7 @@ export const TOOLS: ToolDef[] = [
     status: 'ready',
     help: [
       'Add a file and choose which fixes to apply.',
-      'Trim and case options normalise text; numbers-from-text turns "1,000" into a real number.',
+      'Trim and case options normalise text; numbers-from-text turns figures stored as text into real numbers — Indian grouping ("1,00,000"), accounting negatives ("(1,000)"), ERP trailing minus ("1000-") and currency marks ("₹500"). Anything ambiguous is left alone and counted, because a figure left as text is silently missing from every total.',
       'Select Clean & preview, then download.',
     ],
     helpNote: 'Cleaning makes lookups, merges and comparisons reliable.',
@@ -135,7 +135,7 @@ export const TOOLS: ToolDef[] = [
       'Add files, untick or rename what you want, then Register. Each sheet becomes a table called df_<name> — the first run starts Python, which takes a few seconds once.',
       'You do not have to write anything to begin: select Insert a step and pick a task (totals by category, rows missing from another table, a chart). It writes the code using your own column names, runs it, and you can edit it afterwards.',
       'Each cell runs on its own — Shift+Enter runs it and moves on; the last line of a cell is displayed, and print() output and charts appear underneath. Cells remember each other, so build one step at a time.',
-      'If a step fails you get a plain-English explanation under the cell, with the technical detail folded away. Select a column in the right-hand list to drop its exact name into your code.',
+      'If a step fails you get a plain-English explanation under the cell, with the technical detail folded away. Select a column in the Your data panel to drop its exact name into your code.',
       'Your work is kept in this browser as you type, so a closed tab is recoverable. Save writes an .ipynb with your results and charts included — it opens in real Jupyter too.',
     ],
     helpNote: 'Runs entirely in this browser. Nothing is uploaded, and it cannot read files from your computer — only what you drop in.',

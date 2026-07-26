@@ -1,9 +1,10 @@
-// Parser worker: all SheetJS read/serialize work happens here, off the main
-// thread, so parsing a big workbook never freezes the UI. Communicates via the
-// typed WorkerRequest/WorkerResponse contract in core/types.
+// Parser worker: reading a workbook happens here, off the main thread, so
+// parsing a big file never freezes the UI. Serialization lives in core/serialize
+// — it is pure and belongs where it can be unit-tested. This file is the message
+// plumbing for the typed WorkerRequest/WorkerResponse contract in core/types.
 import * as XLSX from 'xlsx';
 import { extractTables } from '../core/tables';
-import { neutralizeSheet } from '../core/csvsafe';
+import { serializeSheetTo, serializeSheetsToWorkbook } from '../core/serialize';
 import type {
   WorkerRequest,
   WorkerResponse,
@@ -11,7 +12,6 @@ import type {
   Workbook,
   TableDef,
   CellValue,
-  ExportFormat,
 } from '../core/types';
 
 self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
@@ -21,10 +21,10 @@ self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
       const workbook = parse(req.buffer, req.fileName, req.fileSize, req.previewRows);
       respond({ id: req.id, ok: true, kind: 'parse', workbook });
     } else if (req.kind === 'serialize') {
-      const { blob, mime, ext } = serialize(req.sheet, req.format);
+      const { blob, mime, ext } = serializeSheetTo(req.sheet, req.format);
       respond({ id: req.id, ok: true, kind: 'serialize', blob, mime, ext });
     } else if (req.kind === 'serializeWorkbook') {
-      const { blob, mime, ext } = serializeWorkbook(req.sheets);
+      const { blob, mime, ext } = serializeSheetsToWorkbook(req.sheets);
       respond({ id: req.id, ok: true, kind: 'serializeWorkbook', blob, mime, ext });
     }
   } catch (e) {
@@ -92,93 +92,4 @@ function extractTableDefs(wb: XLSX.WorkBook, buffer: ArrayBuffer): TableDef[] {
     out.push({ name: meta.name, sheetName: meta.sheetName, ref: meta.ref, columns: meta.columns, grid });
   }
   return out;
-}
-
-function serialize(sheet: SheetData, format: ExportFormat): { blob: Blob; mime: string; ext: string } {
-  const aoa: CellValue[][] = [sheet.headers, ...sheet.rows];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-  // CSV and TSV are re-read by Excel, which evaluates anything that starts like
-  // a formula. Those two get a sheet whose text cells are neutralised; .xlsx
-  // does not need it (SheetJS writes these as string cells, which Excel never
-  // evaluates) and the machine-readable formats must stay verbatim.
-  const textSafe = (): XLSX.WorkSheet => {
-    const safe = neutralizeSheet(sheet);
-    return XLSX.utils.aoa_to_sheet([safe.headers, ...safe.rows] as CellValue[][]);
-  };
-
-  switch (format) {
-    case 'csv':
-      return textBlob(XLSX.utils.sheet_to_csv(textSafe()), 'text/csv', 'csv');
-    case 'tsv':
-      return textBlob(XLSX.utils.sheet_to_csv(textSafe(), { FS: '\t' }), 'text/tab-separated-values', 'tsv');
-    case 'html':
-      return textBlob(XLSX.utils.sheet_to_html(ws), 'text/html', 'html');
-    case 'json':
-      return textBlob(JSON.stringify(rowsAsObjects(sheet), null, 2), 'application/json', 'json');
-    case 'md':
-      return textBlob(toMarkdown(sheet), 'text/markdown', 'md');
-    case 'xlsx':
-    default: {
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, sheet.name.slice(0, 31) || 'Sheet1');
-      const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
-      return {
-        blob: new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-        mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ext: 'xlsx',
-      };
-    }
-  }
-}
-
-// Build a single multi-sheet .xlsx (used by Merge "as separate sheets").
-// Sheet names are made unique and trimmed to Excel's 31-char limit.
-function serializeWorkbook(sheets: SheetData[]): { blob: Blob; mime: string; ext: string } {
-  const wb = XLSX.utils.book_new();
-  const used = new Set<string>();
-  sheets.forEach((sheet, i) => {
-    const aoa: CellValue[][] = [sheet.headers, ...sheet.rows];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(sheet.name || `Sheet${i + 1}`, used));
-  });
-  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
-  return {
-    blob: new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ext: 'xlsx',
-  };
-}
-
-function uniqueSheetName(name: string, used: Set<string>): string {
-  // Excel forbids : \ / ? * [ ] and caps names at 31 chars.
-  let base = name.replace(/[:\\/?*[\]]/g, '_').slice(0, 31) || 'Sheet';
-  let candidate = base;
-  let n = 2;
-  while (used.has(candidate.toLowerCase())) {
-    const suffix = `_${n++}`;
-    candidate = base.slice(0, 31 - suffix.length) + suffix;
-  }
-  used.add(candidate.toLowerCase());
-  return candidate;
-}
-
-function textBlob(text: string, mime: string, ext: string) {
-  return { blob: new Blob([text], { type: mime }), mime, ext };
-}
-
-function rowsAsObjects(sheet: SheetData): Record<string, CellValue>[] {
-  return sheet.rows.map((r) => {
-    const o: Record<string, CellValue> = {};
-    sheet.headers.forEach((h, i) => (o[h] = r[i] ?? null));
-    return o;
-  });
-}
-
-function toMarkdown(sheet: SheetData): string {
-  const esc = (v: CellValue) => String(v ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
-  const head = `| ${sheet.headers.map(esc).join(' | ')} |`;
-  const sep = `| ${sheet.headers.map(() => '---').join(' | ')} |`;
-  const body = sheet.rows.map((r) => `| ${r.map(esc).join(' | ')} |`).join('\n');
-  return [head, sep, body].join('\n');
 }

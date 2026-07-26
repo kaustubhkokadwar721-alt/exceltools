@@ -4,9 +4,10 @@
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
-import { attachHelp } from '../ui/help';
 import { selectField, button, el, escapeHtml } from '../ui/controls';
 import { tableSetupCard, type SourceSetup } from '../ui/source-setup';
+import { renderSheetPanel } from '../ui/datapanel';
+import { openDataPanel, closeDataPanel, setCrumb } from '../app/shell';
 import { parseFile, serializeSheet } from '../core/parser';
 import { resolveSource } from '../core/source';
 import { downloadBlob, withExtension } from '../core/fileio';
@@ -25,16 +26,15 @@ const PREVIEW_ROWS = 2000;
 
 export function mountConverter(root: HTMLElement): void {
   root.innerHTML = `
-    <div class="tool-head"><h2>Convert</h2>
-    <p class="tool-blurb">Turn a spreadsheet into CSV, TSV, JSON, Markdown, HTML, or Excel — locally.</p></div>
     <div class="tool-body" id="body"></div>`;
   const body = root.querySelector<HTMLElement>('#body')!;
   reset(body);
-  attachHelp(root, 'convert');
 }
 
 function reset(body: HTMLElement): void {
   body.innerHTML = '';
+  closeDataPanel();
+  setCrumb('');
   body.append(
     createDropzone({
       onError: (m) => toast(m, 'error'),
@@ -79,6 +79,22 @@ function renderConfig(body: HTMLElement, fileName: string, wb: Workbook): void {
     gridHost.append(sheet.rows.length ? createDataGrid(sheet) : el('div', { class: 'empty' }, ['No data rows.']));
   };
 
+  const showPanel = () => {
+    // Sheets are the pickable sources; an Excel Table's columns are edited in
+    // its own card, so listing them twice would be two places to change one.
+    if (!wb.sheets.length) return closeDataPanel();
+    const idx = srcSel.value.startsWith('s') ? Number(srcSel.value.slice(1)) : -1;
+    renderSheetPanel(openDataPanel({ title: 'Your data', label: 'Sheets and columns in this file' }), {
+      fileName,
+      sheets: wb.sheets,
+      activeIndex: idx,
+      onPick: (i) => {
+        srcSel.value = `s${i}`;
+        onSourceChange();
+      },
+    });
+  };
+
   const onSourceChange = () => {
     const v = srcSel.value;
     setupHost.innerHTML = '';
@@ -89,6 +105,7 @@ function renderConfig(body: HTMLElement, fileName: string, wb: Workbook): void {
       setup = null;
     }
     renderPreview();
+    showPanel();
   };
   srcSel.addEventListener('change', onSourceChange);
 
@@ -112,6 +129,7 @@ function renderConfig(body: HTMLElement, fileName: string, wb: Workbook): void {
     openAnother,
   ]);
 
+  setCrumb(fileName);
   body.append(head, el('div', { class: 'config-bar' }, [srcWrap, fmtWrap, convertBtn]), setupHost, gridHost);
   onSourceChange();
 }

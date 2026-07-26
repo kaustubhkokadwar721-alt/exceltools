@@ -46,10 +46,10 @@ test('a hostile URL fragment is shown as text, not rendered as markup', async ({
   page.on('pageerror', (e) => errors.push(String(e)));
 
   await page.goto('/#/tool/<img src=x onerror="window.__pwned=1">');
-  await page.waitForSelector('.tool-blurb');
+  await page.waitForSelector('#content .empty');
 
   // Rendered as visible text, with no element created from it.
-  await expect(page.locator('.tool-blurb')).toContainText('No tool called');
+  await expect(page.locator('#content .empty')).toContainText('No tool called');
   expect(await page.locator('#content img').count()).toBe(0);
   expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined();
   expect(errors).toEqual([]);

@@ -59,66 +59,106 @@ svg { display: block; }
 a { color: inherit; text-decoration: none; }
 .rgy-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
-/* ---- Shell: sidebar + work ---- */
-.app-shell { display: flex; min-height: 100vh; min-height: 100dvh; }
-.app-nav {
-  width: 264px; flex: none; background: var(--rgy-sidebar); border-right: 1px solid var(--rgy-rule);
-  display: flex; flex-direction: column; padding: 22px 14px; box-sizing: border-box;
-  position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto;
+/* ---- Shell: app bar + data panel + work ----
+   The frame is exactly one viewport tall and never scrolls; the work surface
+   and the data panel each scroll inside themselves. Density is driven by
+   viewport *height*, so a short laptop panel gets a tighter shell without the
+   user configuring anything. */
+:root { --bar-h: 44px; --panel-w: 250px; --work-pad-y: 18px; --work-pad-x: 26px; }
+@media (max-height: 760px) { :root { --bar-h: 40px; --work-pad-y: 12px; --work-pad-x: 20px; } }
+@media (min-height: 1000px) { :root { --bar-h: 48px; --work-pad-y: 26px; --work-pad-x: 34px; --panel-w: 280px; } }
+
+html, body { overflow: hidden; }
+.app-shell { display: grid; grid-template-rows: var(--bar-h) minmax(0, 1fr); height: 100vh; height: 100dvh; }
+
+.app-bar {
+  position: relative; z-index: 20;
+  display: flex; align-items: center; gap: 10px; padding: 0 12px;
+  background: var(--rgy-sidebar); border-bottom: 1px solid var(--rgy-rule);
 }
-.brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 18px; cursor: pointer; }
-.brand-mark { width: 34px; height: 34px; border-radius: var(--rgy-radius-sm); background: var(--rgy-green); color: #fff; display: grid; place-items: center; font: 600 16px var(--rgy-font-display); flex: none; }
-.brand-name { font: 600 19px var(--rgy-font-display); line-height: 1.1; }
-.brand-tagline { font: 400 13px var(--rgy-font-body); color: var(--rgy-ink-faint); }
+.brand-mark { width: 26px; height: 26px; flex: none; border: 0; border-radius: 7px; background: var(--rgy-green); color: #fff; display: grid; place-items: center; font: 600 13px var(--rgy-font-display); cursor: pointer; }
+.brand-mark:focus-visible, .bar-btn:focus-visible, .switch-btn:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: 2px; }
 
-.nav-group-label { display: flex; align-items: center; gap: 8px; padding: 14px 13px 6px; font: 600 12.5px var(--rgy-font-body); letter-spacing: .6px; text-transform: uppercase; color: var(--rgy-ink-faint); }
-.app-nav .nav-group-label:first-of-type { padding-top: 4px; }
-.nav-group-label .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--rgy-green); flex: none; }
-.nav-group-label.sql .dot { border-radius: 2px; background: var(--rgy-gold); }
-.nav-group-label.py .dot { border-radius: 2px; background: var(--rgy-green); transform: rotate(45deg); }
-.nav-group { display: flex; flex-direction: column; gap: 1px; }
-.nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 13px; border-radius: var(--rgy-radius-sm); border: 1px solid transparent; color: var(--rgy-ink-soft); font: 600 15px var(--rgy-font-body); cursor: pointer; }
-.nav-item:hover { background: #f3efe2; color: var(--rgy-ink); }
-.nav-item.active { background: var(--rgy-panel); border-color: var(--rgy-input); color: var(--rgy-green); }
-.nav-item:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: 2px; }
-.nav-icon { width: 18px; height: 18px; flex: none; color: var(--rgy-ink-faint); display: grid; place-items: center; }
-.nav-icon svg { width: 16px; height: 16px; }
-.nav-item:hover .nav-icon, .nav-item.active .nav-icon { color: var(--rgy-green); }
-.nav-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nav-meta { font: 500 13px var(--rgy-font-mono); color: var(--rgy-ink-faint); }
-.nav-tag { padding: 1px 7px; border-radius: 100px; background: var(--rgy-panel-subtle); border: 1px solid var(--rgy-rule); color: var(--rgy-ink-faint); font: 600 10.5px var(--rgy-font-body); letter-spacing: .04em; text-transform: uppercase; }
+.switcher { position: relative; }
+.switch-btn { display: flex; align-items: center; gap: 7px; padding: 5px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--rgy-ink); font: 600 15px var(--rgy-font-body); cursor: pointer; }
+.switch-btn:hover { background: var(--rgy-panel); border-color: var(--rgy-input); }
+.switch-caret { color: var(--rgy-ink-faint); font-size: 11px; }
+/* A class-level `display` outranks the user agent's [hidden] rule, so every
+   element the shell hides by attribute needs this said explicitly. */
+.switch-menu[hidden], .help-pop[hidden] { display: none; }
+/* Two columns where there is width: nine tools with their descriptions then fit
+   in one glance instead of a 560px scroller. */
+.switch-menu { position: absolute; top: calc(100% + 6px); left: 0; width: min(660px, calc(100vw - 24px)); max-height: calc(100dvh - var(--bar-h) - 20px); overflow-y: auto; padding: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 2px 6px; background: var(--rgy-panel); border: 1px solid var(--rgy-rule); border-radius: var(--rgy-radius); box-shadow: 0 8px 26px rgba(38, 35, 28, .14); }
+.switch-group { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; padding: 10px 10px 6px; }
+.switch-group .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--rgy-green); flex: none; align-self: center; }
+.switch-group.sql .dot { border-radius: 2px; background: var(--rgy-gold); }
+.switch-group b { font: 600 12.5px var(--rgy-font-body); letter-spacing: .6px; text-transform: uppercase; }
+.switch-group span:last-child { font-size: 13px; color: var(--rgy-ink-faint); }
+.switch-item { display: flex; gap: 11px; padding: 8px 10px; border-radius: var(--rgy-radius-sm); border: 1px solid transparent; cursor: pointer; }
+.switch-item:hover { background: var(--rgy-inset); }
+.switch-item.active { background: var(--rgy-panel-subtle); border-color: var(--rgy-input); }
+.switch-item:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: -2px; }
+.switch-icon { width: 26px; height: 26px; flex: none; border-radius: 7px; background: #e7efe4; border: 1px solid #cfdcd0; display: grid; place-items: center; color: var(--rgy-green); }
+.switch-icon svg { width: 15px; height: 15px; }
+.switch-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.switch-name { font: 600 14.5px var(--rgy-font-body); color: var(--rgy-ink); }
+.switch-item.active .switch-name { color: var(--rgy-green); }
+.switch-blurb { font: 400 13px/1.4 var(--rgy-font-body); color: var(--rgy-ink-soft); }
 
-/* Compact status stack pinned to the sidebar foot. */
-.side-status { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--rgy-rule); display: flex; flex-direction: column; gap: 8px; }
-.side-line { display: flex; align-items: center; gap: 9px; padding: 0 4px; font: 500 13.5px var(--rgy-font-body); color: var(--rgy-ink-soft); }
-.side-line .dot, .side-privacy summary .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rgy-green); flex: none; }
-.side-foot-line { color: var(--rgy-ink-faint); }
-.side-privacy { border: 1px solid var(--rgy-rule); border-radius: var(--rgy-radius-sm); background: var(--rgy-panel); }
-.side-privacy summary { display: flex; align-items: center; gap: 9px; padding: 8px 10px; cursor: pointer; list-style: none; font: 600 13px var(--rgy-font-body); letter-spacing: .5px; text-transform: uppercase; color: var(--rgy-green); }
-.side-privacy summary::-webkit-details-marker { display: none; }
-.side-privacy summary:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: 2px; }
-.side-privacy-body { padding: 0 10px 10px; font: 400 13.5px/1.5 var(--rgy-font-body); color: var(--rgy-ink-soft); }
+.app-crumb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 14px var(--rgy-font-mono); color: var(--rgy-ink-faint); }
+.app-bar-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.app-status { display: inline-flex; align-items: center; gap: 7px; font: 500 13.5px var(--rgy-font-body); color: var(--rgy-ink-faint); white-space: nowrap; }
+.app-status .dot, .privacy-badge .dot, .panel-foot .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rgy-green); flex: none; }
+.app-status.is-error { color: var(--rgy-red); }
+/* Kept in the bar, not a page block: the reassurance is worth a permanent line,
+   not a permanent paragraph. */
+.privacy-badge { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border: 1px solid #bed4c2; border-radius: 999px; background: #e7efe4; color: var(--rgy-green); font: 600 13px var(--rgy-font-body); white-space: nowrap; }
+.privacy-badge:hover { background: #dbe8dd; }
+.privacy-badge:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: 2px; }
+.bar-btn { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border: 1px solid var(--rgy-input); border-radius: 50%; background: var(--rgy-panel); color: var(--rgy-ink-faint); font: 600 13px var(--rgy-font-body); cursor: pointer; }
+.bar-btn:hover { color: var(--rgy-green); border-color: var(--rgy-green); }
+/* The panel button is the narrow-screen stand-in for the seam toggle. */
+.panel-btn { display: none; }
+.bar-btn[hidden] { display: none; }
 
-.app-work { flex: 1; min-width: 0; padding: 28px 34px; }
+.help-pop { position: absolute; top: calc(100% + 6px); right: 12px; width: min(520px, calc(100vw - 24px)); max-height: calc(100dvh - var(--bar-h) - 20px); overflow-y: auto; padding: 16px 20px 18px; background: var(--rgy-panel); border: 1px solid var(--rgy-rule); border-radius: var(--rgy-radius); box-shadow: 0 8px 26px rgba(38, 35, 28, .14); }
+.help-pop h3 { margin: 0 0 4px; font: 500 19px var(--rgy-font-display); }
+.help-blurb { margin: 0 0 12px; color: var(--rgy-ink-soft); font-size: 14.5px; }
 
-/* ---- Tool heading ---- */
-.tool-head h2, .tool-head h1 { margin: 0 0 4px; font: 500 24px var(--rgy-font-display); line-height: 1.2; }
-.tool-blurb { max-width: 720px; margin: 0 0 14px; color: var(--rgy-ink-soft); font-size: 15.5px; }
+/* Columns are placed explicitly: hiding the panel removes it as a grid item, and
+   auto-placement would then slide the work surface into the panel's track. */
+.app-body { display: grid; grid-template-columns: var(--panel-w) auto minmax(0, 1fr); min-height: 0; }
+.app-shell.panel-collapsed .app-body,
+.app-body:not(:has(.app-panel:not([hidden]))) { grid-template-columns: 0 auto minmax(0, 1fr); }
+.app-shell.panel-collapsed .app-panel { display: none; }
+
+.app-panel { grid-column: 1; display: flex; flex-direction: column; min-height: 0; background: var(--rgy-sidebar); border-right: 1px solid var(--rgy-rule); }
+.app-panel[hidden] { display: none; }
+.panel-head { display: flex; align-items: center; gap: 10px; padding: 9px 12px 7px; }
+.panel-title { flex: 1; min-width: 0; font: 600 12.5px var(--rgy-font-body); letter-spacing: .6px; text-transform: uppercase; color: var(--rgy-ink-faint); }
+.panel-action[hidden] { display: none; }
+.panel-action { min-height: 26px; padding: 2px 10px; font-size: 13px; white-space: nowrap; }
+.panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px 10px; }
+.panel-foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--rgy-rule); font: 500 12.5px var(--rgy-font-body); color: var(--rgy-green); }
+
+/* A 14px seam between panel and work, so hiding the panel is one click from
+   wherever you are rather than a trip to the app bar. */
+.panel-toggle { grid-column: 2; width: 14px; border: 0; border-right: 1px solid var(--rgy-rule); background: var(--rgy-sidebar); color: var(--rgy-ink-faint); font-size: 12px; line-height: 1; cursor: pointer; padding: 0; }
+.panel-toggle[hidden] { display: none; }
+.panel-toggle:hover { background: var(--rgy-panel-subtle); color: var(--rgy-green); }
+.panel-toggle:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: -2px; }
+
+.app-work { grid-column: 3; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--work-pad-y) var(--work-pad-x); }
+
+/* ---- Tool surface ---- */
 .tool-loading, .loading { color: var(--rgy-ink-soft); padding: 18px 0; }
 .notfound h2 { font-family: var(--rgy-font-display); font-weight: 500; }
 .notfound, .empty { color: var(--rgy-ink-soft); }
 .planned-note { display: flex; gap: 10px; padding: 12px 14px; border: 1px solid var(--rgy-rule); border-left: 4px solid var(--rgy-gold); border-radius: var(--rgy-radius-sm); background: var(--rgy-inset); color: var(--rgy-ink-soft); }
 
-/* In-app help */
-.rgy-help { margin: 0 0 18px; border: 1px solid var(--rgy-rule); border-left: 3px solid var(--rgy-green); border-radius: var(--rgy-radius-sm); background: var(--rgy-inset); }
-.rgy-help > summary { padding: 9px 14px; display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--rgy-green-deep); font: 600 13px var(--rgy-font-body); letter-spacing: .5px; text-transform: uppercase; list-style: none; }
-.rgy-help > summary::-webkit-details-marker { display: none; }
-.rgy-help > summary::before { content: "?"; display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid color-mix(in srgb, var(--rgy-green) 45%, white); border-radius: 50%; background: color-mix(in srgb, var(--rgy-green) 10%, white); font-size: 12px; }
-.rgy-help[open] > summary { border-bottom: 1px solid var(--rgy-rule-soft); }
-.rgy-help > summary:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: 2px; }
-.rgy-help__body { padding: 12px 16px 14px; }
 .rgy-help__steps { margin: 0; padding-left: 20px; color: var(--rgy-ink-soft); display: grid; gap: 6px; }
 .rgy-help__note { margin: 12px 0 0; padding-left: 10px; border-left: 2px solid var(--rgy-rule); color: var(--rgy-ink-faint); font-size: 14px; }
+.nav-tag { padding: 1px 7px; border-radius: 100px; background: var(--rgy-panel-subtle); border: 1px solid var(--rgy-rule); color: var(--rgy-ink-faint); font: 600 10.5px var(--rgy-font-body); letter-spacing: .04em; text-transform: uppercase; }
 
 /* ---- Home ---- */
 .home-head h1 { margin: 0 0 6px; font: 500 27px var(--rgy-font-display); }
@@ -215,7 +255,9 @@ a { color: inherit; text-decoration: none; }
 .grid-resize { position: absolute; top: 0; right: 0; width: 11px; height: 100%; display: grid; justify-items: end; align-items: center; padding-right: 1px; cursor: col-resize; z-index: 3; touch-action: none; box-sizing: border-box; }
 .grid-resize-bar { width: 2px; height: 60%; border-radius: 2px; background: var(--rgy-rule); transition: background .12s var(--rgy-ease), height .12s var(--rgy-ease); }
 .grid-resize:hover .grid-resize-bar, .grid-resize.dragging .grid-resize-bar { background: var(--rgy-green); height: 100%; }
-.grid-viewport { height: 58vh; overflow: auto; position: relative; }
+/* Fill what the shell leaves rather than a flat 58vh: on a 1080p screen that
+   was 100+ rows' worth of empty page under the grid. */
+.grid-viewport { height: max(280px, min(74vh, calc(100dvh - 290px))); overflow: auto; position: relative; }
 .grid-viewport:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: 2px; }
 .grid-spacer { position: relative; }
 .grid-pool { position: absolute; inset: 0; }
@@ -249,17 +291,11 @@ a { color: inherit; text-decoration: none; }
 .schema-meta { color: var(--rgy-ink-faint); }
 .schema-cols { display: none; }
 
-/* Two-column query workspace: editor/results + always-visible schema rail. */
-.query-work { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
-.query-work:not(:has(.schema-detail)) { grid-template-columns: 1fr; }
-.query-schema { position: sticky; top: 14px; max-height: calc(100dvh - 28px); overflow-y: auto; }
-.query-schema .schema-cols-list { grid-template-columns: 1fr; padding-left: 13px; }
-.query-schema .schema-head { align-items: baseline; }
-.query-schema .schema-head .file-list-head { flex: 1 1 100%; margin-bottom: 4px; }
-@media (max-width: 1100px) {
-  .query-work { grid-template-columns: 1fr; }
-  .query-schema { position: static; max-height: none; }
-}
+/* The schema rail moved into the shell's data panel, so the workspace is one
+   column and the tool no longer competes with itself for width. */
+.panel-body .schema-cols-list { grid-template-columns: 1fr; padding-left: 13px; }
+.panel-body .schema-head { align-items: baseline; }
+.panel-body .schema-head .file-list-head { flex: 1 1 100%; margin: 6px 0 4px; }
 
 .schema-head { display: flex; align-items: center; gap: 14px; justify-content: space-between; flex-wrap: wrap; }
 .schema-head .file-list-head { margin: 16px 0 8px; }
@@ -280,12 +316,7 @@ a { color: inherit; text-decoration: none; }
 .sql-editor:focus { outline: none; border-color: var(--rgy-green); }
 .sql-error { display: flex; gap: 10px; padding: 12px 14px; border: 1px solid var(--rgy-rule); border-left: 4px solid var(--rgy-red); border-radius: var(--rgy-radius-sm); background: color-mix(in srgb, var(--rgy-red) 5%, white); color: var(--rgy-red); font: 400 14px var(--rgy-font-mono); white-space: pre-wrap; }
 
-/* ---- Chrome that collapses once you are working ---- */
-.tool-head.is-compact { margin-bottom: 10px; }
-.tool-head.is-compact h2 { font-size: clamp(21px, 2.6vw, 26px); margin-bottom: 2px; }
-.tool-head.is-compact .tool-blurb { display: none; }
-.tool-head.is-compact .rgy-help { margin-top: 6px; }
-
+/* ---- The collapsed stand-in for a drop area ---- */
 .src-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border: 1px solid var(--rgy-rule); border-left: 3px solid var(--rgy-green); border-radius: var(--rgy-radius); background: var(--rgy-panel); }
 .src-bar-summary { font: 600 14.5px var(--rgy-font-body); color: var(--rgy-green); white-space: nowrap; }
 .src-bar-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
@@ -472,6 +503,25 @@ a { color: inherit; text-decoration: none; }
 .rail-empty p { margin: 0 0 6px; }
 .schema-col { cursor: pointer; border-radius: 4px; padding: 1px 3px; margin: 0 -3px; }
 .schema-col:hover { background: color-mix(in srgb, var(--rgy-green) 9%, transparent); }
+
+/* ---- Data panel contents ---- */
+.panel-hint { padding: 2px 4px 8px; font: 400 12.5px var(--rgy-font-body); color: var(--rgy-ink-faint); }
+.panel-file { padding: 2px 4px 8px; font: 500 14px var(--rgy-font-mono); color: var(--rgy-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-body .schema-block { margin-bottom: 6px; }
+.panel-body .schema-block.is-active { border-color: var(--rgy-green); }
+/* A 250px column cannot hold "PrimaryAmount" and "number · 4 blank" on one
+   line without truncating the half that matters. Stack them: the name gets the
+   full width, the profile sits under it. */
+.panel-body .schema-col { display: block; padding: 3px 4px; }
+/* Same specificity as the rule above and later in the file would lose, so the
+   column filter's [hidden] has to be re-stated at this depth. */
+.panel-body .schema-col[hidden], .panel-body .schema-block[hidden] { display: none; }
+.panel-body .schema-col-name { display: block; font-size: 13.5px; }
+.panel-body .schema-col-type { display: block; font: 400 12px var(--rgy-font-body); }
+.panel-body .rail-tabs { margin-bottom: 8px; }
+.panel-body .schema-detail { gap: 6px; }
+/* A column with gaps in it is the one that turns a total into a wrong total. */
+.schema-col-type.has-blanks { color: var(--rgy-amber); }
 .var-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 7px 2px; border-bottom: 1px solid var(--rgy-rule-soft); font-size: 14px; }
 .var-row .schema-name { font: 500 14px var(--rgy-font-mono); }
 .var-kind { justify-self: end; font: 500 12px var(--rgy-font-body); letter-spacing: .4px; text-transform: uppercase; color: var(--rgy-ink-faint); }
@@ -546,15 +596,23 @@ a { color: inherit; text-decoration: none; }
 .slot-loaded { display: flex; align-items: center; gap: 12px; background: var(--rgy-panel); border: 1px solid var(--rgy-rule); border-radius: var(--rgy-radius); padding: 12px 16px; }
 
 /* ---- Responsive ---- */
-@media (max-width: 900px) {
-  .app-shell { flex-direction: column; }
-  .app-nav { width: auto; height: auto; position: static; flex-direction: column; }
-  .nav-group { flex-flow: row wrap; }
-  .nav-item { flex: 1 1 140px; }
-  .side-status { display: none; }
+/* Narrow screens cannot afford a permanent panel beside the work; it becomes an
+   overlay over the work surface, which the same toggle opens and closes. */
+@media (max-width: 700px) {
+  .switch-menu { grid-template-columns: 1fr; }
+}
+@media (max-width: 820px) {
+  .app-body { grid-template-columns: 0 auto minmax(0, 1fr); }
+  .app-panel { position: absolute; top: var(--bar-h); bottom: 0; left: 0; z-index: 15; width: min(300px, 86vw); box-shadow: 0 6px 26px rgba(38, 35, 28, .18); }
+  .panel-toggle { display: none; }
+  .panel-btn:not([hidden]) { display: grid; }
+  .app-shell { position: relative; }
+  .app-crumb { display: none; }
+  .privacy-badge .badge-text { display: none; }
+  .privacy-badge { padding: 6px; }
 }
 @media (max-width: 640px) {
-  .app-work { padding: 18px 16px; }
+  .app-work { padding: 14px 14px; }
   .config-bar { flex-direction: column; align-items: stretch; }
   .field-select, .field-input { width: 100%; }
   .compare-drops { grid-template-columns: 1fr; }
