@@ -21,10 +21,19 @@ type Pending = {
  */
 const REQUEST_TIMEOUT_MS = 180_000;
 
+/**
+ * How many times a crashed worker is replaced before we stop trying. A worker
+ * that fails while *starting* would otherwise respawn on its own error forever,
+ * pegging a core; past this we surface the failure instead, which is honest and
+ * leaves the machine usable.
+ */
+const MAX_RESPAWNS = 3;
+
 export class WorkerHarness {
-  private worker: Worker;
+  private worker: Worker | null;
   private nextId = 1;
   private pending = new Map<number, Pending>();
+  private respawns = 0;
 
   constructor() {
     this.worker = this.spawn();
@@ -55,6 +64,12 @@ export class WorkerHarness {
         reject(new Error('Reading the file took too long and was stopped. It may be too large for this browser.'));
       }, REQUEST_TIMEOUT_MS);
       this.pending.set(id, { resolve: resolve as Pending['resolve'], reject, timer });
+      if (!this.worker) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(new Error('The file reader could not be started. Reload the page to try again.'));
+        return;
+      }
       try {
         this.worker.postMessage(full, transfer ?? []);
       } catch (e) {
@@ -80,7 +95,9 @@ export class WorkerHarness {
       p.reject(err);
     }
     this.pending.clear();
-    this.worker.terminate();
-    this.worker = this.spawn();
+    this.worker?.terminate();
+    // Give up rather than respawn forever: a worker that dies on start would
+    // otherwise error, respawn, and error again without pause.
+    this.worker = this.respawns++ < MAX_RESPAWNS ? this.spawn() : null;
   }
 }
