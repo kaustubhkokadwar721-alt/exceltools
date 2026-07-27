@@ -4,8 +4,10 @@ import { el } from './controls';
 import { buildDefaultSpec } from '../core/source';
 import type { TableDef, SourceSpec, ColType } from '../core/types';
 
+// No "Auto" here on purpose: detection has already run in buildDefaultSpec, so
+// the dropdown opens on the answer. Showing "Auto" made the user register the
+// table and then go looking for what it had decided.
 const TYPES: { value: ColType; label: string }[] = [
-  { value: 'auto', label: 'Auto' },
   { value: 'text', label: 'Text' },
   { value: 'number', label: 'Number' },
   { value: 'date', label: 'Date' },
@@ -16,6 +18,10 @@ export interface SourceSetup {
   el: HTMLElement;
   def: TableDef;
   getSpec: () => SourceSpec;
+  /** False when the user has unticked this whole table. Excel Tables used to
+   *  register unconditionally, so a workbook with six of them gave you six
+   *  whether you wanted them or not. */
+  isIncluded: () => boolean;
 }
 
 /** Build an editable setup card for a table. Reads live values via getSpec(). */
@@ -24,7 +30,7 @@ export function tableSetupCard(def: TableDef): SourceSetup {
 
   const nameInput = el('input', { class: 'field-input', value: spec.name }) as HTMLInputElement;
 
-  const skip = el('input', { type: 'checkbox' }) as HTMLInputElement;
+  const skip = el('input', { type: 'checkbox', class: 'stage-skip' }) as HTMLInputElement;
   const skipLabel = el('label', { class: 'checkbox' }, [skip, el('span', {}, ['Skip type detection — import as text'])]);
 
   const colRows = spec.columns.map((c) => {
@@ -50,8 +56,14 @@ export function tableSetupCard(def: TableDef): SourceSetup {
   };
   skip.addEventListener('change', applySkip);
 
+  const includeTable = el('input', { type: 'checkbox', class: 'stage-include' }) as HTMLInputElement;
+  includeTable.checked = true;
   const card = el('div', { class: 'source-card' }, [
     el('div', { class: 'source-card-head' }, [
+      el('label', { class: 'checkbox', title: 'Untick to leave this table out' }, [
+        includeTable,
+        el('span', { class: 'field-label' }, ['Include']),
+      ]),
       el('span', { class: 'field-label' }, ['Table name']),
       nameInput,
       skipLabel,
@@ -77,5 +89,10 @@ export function tableSetupCard(def: TableDef): SourceSetup {
     })),
   });
 
-  return { el: card, def, getSpec };
+  // Dim the card when it is excluded, so a glance down the list shows what is
+  // actually about to be registered.
+  const applyInclude = () => card.classList.toggle('is-excluded', !includeTable.checked);
+  includeTable.addEventListener('change', applyInclude);
+
+  return { el: card, def, getSpec, isIncluded: () => includeTable.checked };
 }

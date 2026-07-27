@@ -230,9 +230,10 @@ test('notebook: a restored draft says which tables it needs and fills the name i
     return !!raw && raw.includes('payroll');
   });
 
-  // Come back cold, restore, and add the file again.
-  await gotoTool(page, 'convert');
-  await gotoTool(page, 'python');
+  // Come back genuinely cold. Switching tools is no longer enough: the
+  // workspace now survives that, so only a reload reproduces "I closed the tab".
+  await page.reload();
+  await page.waitForSelector('.nb-restore', { timeout: 30_000 });
   await page.locator('.nb-restore button:has-text("Restore it")').click();
   await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);
   await page.waitForSelector('.sheet-stage-row input.col-name', { timeout: 60_000 });
@@ -422,8 +423,9 @@ test('notebook: unsaved work is offered back after the tab is closed', async ({ 
   await setCell(page, 0, 'kept = "recover me"');
   // Autosave is debounced — wait for the write itself, not for a wall clock.
   await page.waitForFunction(() => !!localStorage.getItem('exceltools.notebook.draft.v1'));
-  await gotoTool(page, 'convert');
-  await gotoTool(page, 'python');
+  // A reload, not a tool switch — leaving the notebook and coming back keeps
+  // your work on screen now, so there would be nothing to offer back.
+  await page.reload();
 
   await expect(page.locator('.nb-restore')).toContainText('unsaved work');
   await page.locator('.nb-restore button:has-text("Restore it")').click();
@@ -602,4 +604,71 @@ test('grid: drag-resize and double-click autofit', async ({ page }) => {
   await page.locator('.grid-resize').nth(1).dblclick();
   const a2 = (await cell2.boundingBox())!.width;
   expect(Math.abs(a2 - b2)).toBeGreaterThan(10);
+});
+
+// ---- registration workflow -------------------------------------------------
+
+test('notebook: staging can be backed out of, and tables unticked', async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.goto('/#/tool/python');
+  await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);
+  await page.waitForSelector('#setup button:has-text("Register")', { timeout: 60_000 });
+
+  // The button counts what is actually selected, and follows the ticks.
+  await expect(page.locator('#setup .config-bar button').first()).toHaveText('Register 1 table');
+  await page.locator('#setup .sheet-stage-row input[type=checkbox]').first().uncheck();
+  await expect(page.locator('#setup .config-bar button').first()).toHaveText('Nothing selected');
+  await expect(page.locator('#setup .config-bar button').first()).toBeDisabled();
+
+  // Dropping the wrong file must not mean reloading the page to escape it.
+  await page.click('#setup button:has-text("Discard these files")');
+  await expect(page.locator('#setup .sheet-stage-row')).toHaveCount(0);
+  await expect(page.locator('.dropzone')).toBeVisible();
+});
+
+test('notebook: the workspace survives a trip to the privacy page', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  await setCell(page, 0, '# my working note');
+
+  // The privacy explainer used to throw away every registered table and every
+  // cell — a spectacular thing for a "how we protect your data" link to do.
+  await page.click('.privacy-badge');
+  await page.waitForSelector('.pv-page');
+  await gotoTool(page, 'python', '.nb-cell');
+
+  await expect(page.locator('#datapanel .schema-block')).toHaveCount(1);
+  await expect(page.locator('.src-bar')).toContainText('1 table ready');
+  await expect(page.locator('.ce-input').first()).toHaveValue('# my working note');
+});
+
+test('notebook: a registered table can be previewed, renamed and removed', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+
+  await page.click('#datapanel .schema-manage');
+  await expect(page.locator('.table-manager')).toBeVisible();
+  // The preview is the fastest way to see a column was read wrongly.
+  await expect(page.locator('.table-manager .grid-row')).toHaveCount(5);
+  await expect(page.locator('.table-manager .col-editor .col-row')).toHaveCount(4); // header + 3
+
+  await page.locator('.table-manager .col-editor .col-row').nth(1).locator('input.col-name').fill('Ref');
+  await page.click('.table-manager button:has-text("Apply changes")');
+  await expect(page.locator('#datapanel .schema-col-name').first()).toHaveText('Ref');
+
+  page.on('dialog', (d) => d.accept());
+  await page.click('#datapanel .schema-manage');
+  await page.click('.table-manager button:has-text("Remove this table")');
+  await expect(page.locator('#datapanel .schema-block')).toHaveCount(0);
+  await expect(page.locator('.dropzone')).toBeVisible();
+});
+
+test('notebook: column types are decided at import, never left as "Auto"', async ({ page }) => {
+  test.setTimeout(240_000);
+  await bootNotebook(page);
+  const types = await page.locator('#datapanel .schema-col-type').allTextContents();
+  expect(types.join(' ')).not.toContain('auto');
+  // ID is a reference, so it stays text however numeric it looks; Amt is money.
+  expect(types[0]).toContain('text');
+  expect(types[2]).toContain('number');
 });

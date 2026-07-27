@@ -41,7 +41,7 @@ test('skip type detection imports the column as text', async ({ page }) => {
   await page.waitForSelector('.source-card', { timeout: 60_000 });
 
   // Tick "Skip type detection", register.
-  await page.locator('.source-card-head input[type="checkbox"]').check();
+  await page.locator('.source-card-head .stage-skip').check();
   await page.click('button:has-text("Register")');
   await page.waitForSelector('.schema-block summary:has-text("sales")');
 

@@ -8,10 +8,30 @@ describe('groupDigits', () => {
     expect(groupDigits(1643552)).toMatch(/\d[,  .]\d/);
   });
 
-  it('keeps every decimal exactly as the number prints', () => {
+  it('keeps a short decimal exactly as written', () => {
     expect(groupDigits(1234.5)).toContain('.5');
-    expect(groupDigits(0.30000000000000004)).toContain('.30000000000000004');
     expect(groupDigits(12.75)).toContain('.75');
+    expect(groupDigits(1.234)).toContain('.234');
+  });
+
+  it('trims a float to three places, because the tail is arithmetic noise', () => {
+    // These come out of a division or a rate; the digits past the third are an
+    // artefact of binary floating point, not information anyone is reading.
+    expect(groupDigits(0.30000000000000004)).toBe('0.3');
+    expect(groupDigits(33.33333333333333)).toBe('33.333');
+    expect(groupDigits(2 / 3)).toBe('0.667');
+  });
+
+  it('leaves whole numbers whole — a count of 24 is not 24.000', () => {
+    expect(groupDigits(24)).toBe('24');
+    expect(groupDigits(0)).toBe('0');
+    expect(groupDigits(1643552)).not.toContain('.');
+  });
+
+  it('carries a rounding that reaches the integer part', () => {
+    expect(groupDigits(1.9999)).toBe('2');
+    expect(groupDigits(-2.66666)).toBe('-2.667');
+    expect(groupDigits(999.9999)).toBe('1,000');
   });
 
   it('keeps the sign and small numbers unchanged in shape', () => {

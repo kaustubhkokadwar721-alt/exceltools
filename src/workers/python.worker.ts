@@ -9,7 +9,8 @@ interface InitMsg { kind: 'init'; indexURL: string }
 interface RegisterMsg { kind: 'register'; name: string; headers: string[]; rows: CellValue[][] }
 interface RunCellMsg { kind: 'runCell'; id: number; code: string }
 interface VarsMsg { kind: 'vars' }
-type InMsg = InitMsg | RegisterMsg | RunCellMsg | VarsMsg;
+interface DropMsg { kind: 'drop'; name: string }
+type InMsg = InitMsg | RegisterMsg | RunCellMsg | VarsMsg | DropMsg;
 
 export type CellOut =
   | { type: 'table'; headers: string[]; rows: CellValue[][] }
@@ -134,6 +135,17 @@ def _xt_run_cell(code):
             "outputs": _xt_figures(),
         })
 
+# Names that are working parts of a loop or comprehension rather than results.
+# "for r in rows" leaves r bound to the last row, and the inspector showed it
+# beside the totals as though it were one of them. Nobody wrote "r" to look at
+# it later, and burying the two results a user cares about among six leftovers
+# is what made the panel feel like it was reporting on the code, not the data.
+_XT_SCRATCH = {
+    "i", "j", "k", "n", "m", "r", "c", "t", "x", "y", "z", "v", "e", "f", "s",
+    "row", "col", "idx", "item", "key", "val", "tmp", "temp",
+}
+
+
 def _xt_vars():
     """Everything the user created, for the variable inspector."""
     try:
@@ -143,6 +155,8 @@ def _xt_vars():
     out = []
     for k, v in list(_g.items()):
         if k.startswith("_") or k == "tables":
+            continue
+        if k in _XT_SCRATCH:
             continue
         if callable(v) or type(v).__name__ == "module":
             continue
@@ -163,7 +177,9 @@ def _xt_vars():
         except Exception:
             detail = t
         out.append({"name": k, "type": t, "detail": detail[:120]})
-    return json.dumps(sorted(out, key=lambda d: d["name"]))
+    # Tables first: they are what most steps produce and what the next step
+    # needs, so they should not be sorted in among a handful of counters.
+    return json.dumps(sorted(out, key=lambda d: (0 if d["type"] == "table" else 1, d["name"])))
 `;
 
 self.onmessage = async (ev: MessageEvent<InMsg>) => {
@@ -200,6 +216,14 @@ self.onmessage = async (ev: MessageEvent<InMsg>) => {
         py.runPython('import pandas as pd\n_g["df_" + _xt_name] = pd.DataFrame(tables[_xt_name])');
       }
       self.postMessage({ kind: 'registered', name: msg.name });
+    } else if (msg.kind === 'drop') {
+      if (!py) throw new Error('engine not initialised');
+      py.globals.set('_xt_name', msg.name);
+      // Both homes: the plain dict every build has, and the pandas global that
+      // only exists when the wheels are present. Leaving either behind means a
+      // "removed" table still answers to its name in a later cell.
+      py.runPython('tables.pop(_xt_name, None)\n_g.pop("df_" + _xt_name, None)');
+      self.postMessage({ kind: 'dropped', name: msg.name });
     } else if (msg.kind === 'runCell') {
       if (!py) throw new Error('engine not initialised');
       stdoutBuf = [];

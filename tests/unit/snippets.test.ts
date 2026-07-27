@@ -183,3 +183,57 @@ describe('recipe parameters', () => {
     }
   });
 });
+
+describe('grouping column default', () => {
+  const t = (columns: { name: string; kind: 'text' | 'number' | 'boolean'; distinct?: number | null }[]) => ({
+    tables: [{ name: 'returns', columns }],
+    pandas: true,
+    charts: false,
+  });
+
+  it('does not group by a reference column, however few text columns there are', () => {
+    // Type detection reads "Invoice No" as text, so "first text column" started
+    // choosing it — and grouping by it returns one row per invoice, which is the
+    // table you already had.
+    const s = snippetsFor(
+      t([
+        { name: 'Invoice No', kind: 'text', distinct: null },
+        { name: 'Entity Name', kind: 'text', distinct: 3 },
+        { name: 'Amount', kind: 'number' },
+      ]),
+    ).find((x) => x.id === 'total-by');
+    expect(s).toBeDefined();
+    expect(defaultValues(s!).group).toBe('Entity Name');
+  });
+
+  it('prefers a party or place over a yes/no flag with fewer values', () => {
+    // "Total by Active" splits the data in two; "Total by Entity Name" is the
+    // step somebody actually wanted, even though it has more distinct values.
+    const s = snippetsFor(
+      t([
+        { name: 'Active', kind: 'boolean', distinct: 2 },
+        { name: 'Entity Name', kind: 'text', distinct: 3 },
+        { name: 'Amount', kind: 'number' },
+      ]),
+    ).find((x) => x.id === 'total-by');
+    expect(defaultValues(s!).group).toBe('Entity Name');
+  });
+
+  it('prefers the column with the fewest distinct values', () => {
+    const s = snippetsFor(
+      t([
+        { name: 'City', kind: 'text', distinct: 40 },
+        { name: 'Status', kind: 'text', distinct: 3 },
+        { name: 'Amount', kind: 'number' },
+      ]),
+    ).find((x) => x.id === 'total-by');
+    expect(defaultValues(s!).group).toBe('Status');
+  });
+
+  it('still offers something when nothing has a distinct count', () => {
+    const s = snippetsFor(
+      t([{ name: 'Region', kind: 'text' }, { name: 'Amount', kind: 'number' }]),
+    ).find((x) => x.id === 'total-by');
+    expect(defaultValues(s!).group).toBe('Region');
+  });
+});

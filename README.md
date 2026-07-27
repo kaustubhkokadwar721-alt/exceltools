@@ -122,6 +122,16 @@ accountant can actually use it.
 - **Click a column name** in the **Your data** panel to drop its exact spelling
   into your code — no transcribing headings with trailing spaces. Each column
   shows its kind and how many cells are blank, so you know before you total it.
+- **Types are decided at import, not guessed at.** Column names carry as much
+  information as their values: `Invoice No`, `GSTIN` and `Cost Code` stay text
+  however numeric they look, a `Month` of 1–12 is a period rather than a
+  quantity, and money stays money. A name can only ever move a column *out* of
+  arithmetic — the wrong guess in the other direction is a silently wrong total.
+  Ambiguous dates like `03/04/2025` are left as text rather than assigned a
+  reading that would move transactions between periods.
+- **Manage a table after it is loaded**: click **Manage** beside it to see the
+  first five rows, rename columns, change a type, or take the table back out.
+  Registration is no longer one-way.
 - **In memory** tab shows every table and value Python is holding; the column
   list filters when a table is wide.
 - Colour is semantic and always paired with text: a cell's left stripe is green
