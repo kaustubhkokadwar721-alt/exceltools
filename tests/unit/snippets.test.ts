@@ -237,3 +237,40 @@ describe('grouping column default', () => {
     expect(defaultValues(s!).group).toBe('Region');
   });
 });
+
+describe('which columns a recipe offers', () => {
+  const ledger = {
+    tables: [
+      {
+        name: 'ledger',
+        columns: [
+          { name: 'Ref', kind: 'text' as const, distinct: null },
+          { name: 'Dept', kind: 'text' as const, distinct: 3 },
+          { name: 'Region', kind: 'text' as const, distinct: 2 },
+          { name: 'Amt', kind: 'number' as const },
+          { name: 'Tax', kind: 'number' as const },
+        ],
+      },
+    ],
+    pandas: true,
+    charts: false,
+  };
+
+  it('offers only numeric columns as something to total', () => {
+    // A reference column reads as text now, so totalling it is not a choice
+    // anyone is given — the dropdown cannot produce a meaningless sum.
+    const s = snippetsFor(ledger).find((x) => x.id === 'total-by')!;
+    const p = s.params.find((x) => x.id === 'value')!;
+    expect(columnChoices(ledger, 'ledger', p.kinds).map((c) => c.name)).toEqual(['Amt', 'Tax']);
+  });
+
+  it('offers every column to group by, but defaults to a sensible one', () => {
+    const s = snippetsFor(ledger).find((x) => x.id === 'total-by')!;
+    const p = s.params.find((x) => x.id === 'group')!;
+    // Grouping by a reference is legal — occasionally you want one row each —
+    // so it stays on offer; it just is not what you get without asking.
+    expect(columnChoices(ledger, 'ledger', p.kinds).map((c) => c.name)).toContain('Ref');
+    expect(defaultValues(s).group).toBe('Region');
+    expect(defaultValues(s).value).toBe('Amt');
+  });
+});
