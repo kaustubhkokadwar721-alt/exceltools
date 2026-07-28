@@ -44,6 +44,7 @@ let nextId = 1;
 let running = 0;
 const pendingCells = new Map<number, { resolve: (r: CellResult) => void }>();
 let pendingRegister: { resolve: () => void; reject: (e: Error) => void } | null = null;
+let pendingDrop: { resolve: () => void } | null = null;
 let pendingVars: { resolve: (v: PyVariable[]) => void } | null = null;
 
 function indexURL(): string {
@@ -64,12 +65,18 @@ export function initPython(): Promise<EngineInfo> {
       } else if (m.kind === 'registered') {
         pendingRegister?.resolve();
         pendingRegister = null;
+      } else if (m.kind === 'dropped') {
+        pendingDrop?.resolve();
+        pendingDrop = null;
       } else if (m.kind === 'vars') {
         pendingVars?.resolve(m.vars ?? []);
         pendingVars = null;
       } else if (m.kind === 'error') {
         pendingRegister?.reject(new Error(m.error));
         pendingRegister = null;
+        // A failed drop must not leave the caller waiting forever.
+        pendingDrop?.resolve();
+        pendingDrop = null;
         reject(new Error(m.error));
       } else if (m.kind === 'cellResult') {
         const p = pendingCells.get(m.id);
@@ -118,6 +125,8 @@ export async function restartPython(): Promise<EngineInfo> {
   pendingCells.clear();
   pendingRegister?.reject(new Error('Python engine restarted'));
   pendingRegister = null;
+  pendingDrop?.resolve();
+  pendingDrop = null;
   pendingVars?.resolve([]);
   pendingVars = null;
   dying?.terminate();
@@ -130,6 +139,19 @@ export async function registerPyTable(name: string, sheet: SheetData): Promise<v
   return new Promise((resolve, reject) => {
     pendingRegister = { resolve, reject };
     worker!.postMessage({ kind: 'register', name, headers: sheet.headers, rows: sheet.rows });
+  });
+}
+
+/**
+ * Forget a table. Registration was one-way, so a table added by mistake stayed
+ * answerable in every later cell however the UI presented it.
+ */
+export async function dropPyTable(name: string): Promise<void> {
+  if (!readyPromise) return; // engine never started; nothing to forget
+  await initPython();
+  return new Promise((resolve) => {
+    pendingDrop = { resolve };
+    worker!.postMessage({ kind: 'drop', name });
   });
 }
 

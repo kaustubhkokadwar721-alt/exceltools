@@ -18,14 +18,15 @@ import { openDataPanel, setCrumb } from '../app/shell';
 import { tableActions, imageActions } from '../ui/resultactions';
 import { tableSetupCard, type SourceSetup } from '../ui/source-setup';
 import { parseFile, serializeWorkbook } from '../core/parser';
-import { resolveSource } from '../core/source';
+import { resolveSource, prepareSheet } from '../core/source';
 import { downloadBlob, pickFiles } from '../core/fileio';
 import { toIpynb, fromIpynb, titleFromIpynb, renderMarkdown, type NotebookCell } from '../core/notebook';
-import { inferColumnKind, profileColumn, describeColumn, schemaTextForAI } from '../core/schema';
+import { profileColumn, describeColumn, schemaTextForAI } from '../core/schema';
 import { explainPythonError } from '../core/pyerrors';
 import { snippetsFor, columnChoices, defaultValues, type Snippet } from '../core/snippets';
 import { saveDraft, loadDraft, clearDraft, describeAge, isDraftEnabled, setDraftEnabled } from '../core/nbstore';
-import type { SheetData, TableDef, ColumnKind } from '../core/types';
+import { sanitizeColumnNames } from '../core/coltype';
+import type { SheetData, TableDef, ColumnKind, ColType, CellValue } from '../core/types';
 import type { CellResult, EngineInfo, PyVariable } from '../core/python';
 
 const PREVIEW_ROWS = 2000;
@@ -77,29 +78,61 @@ const state = {
   rail: 'tables' as 'tables' | 'variables',
   variables: [] as PyVariable[],
   saveTimer: 0 as unknown as ReturnType<typeof setTimeout>,
+  /** Bumped by every load; a read whose token is stale discards its result. */
+  loadToken: 0,
 };
 
 const root = (): HTMLElement => state.root!;
 const q = <T extends HTMLElement>(sel: string): T => root().querySelector<T>(sel)!;
 const newCell = (kind: 'code' | 'markdown', source = ''): UICell => ({ id: state.cellSeq++, kind, source });
 
+/** True when there is work here worth coming back to. */
+function hasWorkspace(): boolean {
+  return (
+    state.registered.length > 0 ||
+    state.pendingTables.length > 0 ||
+    state.pendingSheets.length > 0 ||
+    state.title.trim() !== '' ||
+    state.cells.some((c) => c.source.trim() !== '')
+  );
+}
+
+/**
+ * Mount the notebook into `host`.
+ *
+ * The shell replaces the work surface on every route change, so this runs again
+ * every time you come back from the privacy page or another tool. It used to
+ * reset the whole workspace when it did — reading the privacy explainer threw
+ * away your registered tables and every cell you had written, which is a
+ * spectacular thing for a "how we protect your data" link to do.
+ *
+ * The state lives in this module and outlives the DOM, so coming back is a
+ * re-render, not a reset. Only a genuinely empty workspace starts fresh.
+ */
 export function mountPython(host: HTMLElement): void {
   // A debounced save from the previous visit would otherwise fire against the
   // empty state below and wipe the draft we are about to offer back.
   clearTimeout(state.saveTimer);
   attachFlush();
+  const resuming = hasWorkspace();
   state.root = host;
-  state.registered = [];
-  state.pendingTables = [];
-  state.pendingSheets = [];
-  state.engine = null;
-  state.starting = false;
-  state.variables = [];
-  state.rail = 'tables';
-  state.title = '';
-  state.expectedTables = [];
-  state.unreviewed = false;
-  state.cells = [newCell('code')];
+
+  if (resuming) {
+    // The cells' cached view objects point at DOM that no longer exists.
+    for (const c of state.cells) c.view = undefined;
+  } else {
+    state.registered = [];
+    state.pendingTables = [];
+    state.pendingSheets = [];
+    state.engine = null;
+    state.starting = false;
+    state.variables = [];
+    state.rail = 'tables';
+    state.title = '';
+    state.expectedTables = [];
+    state.unreviewed = false;
+    state.cells = [newCell('code')];
+  }
 
   host.innerHTML = `
     <div class="tool-body">
@@ -111,11 +144,17 @@ export function mountPython(host: HTMLElement): void {
       <div id="nb"></div>
     </div>`;
 
-  renderDropzone(true);
+  // Collapsed once tables are loaded, so returning lands you back on your work
+  // rather than on the drop area you finished with ten minutes ago.
+  renderDropzone(!state.registered.length);
+  renderSetup();
   renderToolbar();
   renderAllCells();
   renderRail();
-  offerRestore();
+  updateEmptyState();
+  // Only offer the draft to a blank notebook — offering it over live work would
+  // invite replacing what is on screen with something older.
+  if (!resuming) offerRestore();
 }
 
 // ---- staging (same flow as Query) ------------------------------------------
@@ -150,21 +189,67 @@ function renderDropzone(expanded: boolean): void {
   );
 }
 
+/** Open the system file picker and stage whatever comes back. */
+async function chooseFiles(): Promise<void> {
+  const files = await pickFiles('.xlsx,.xls,.xlsm,.xltx,.csv,.tsv,.ods', true);
+  if (files.length) await addFiles(files);
+}
+
+/**
+ * Read the dropped files and stage what they contain.
+ *
+ * A large workbook takes seconds to parse and the screen used to say "Reading
+ * files" with no way out: drop the wrong file and you waited for it. The token
+ * is the cancel — each call claims the next one, and a read whose token has been
+ * superseded throws its results away rather than staging them behind your back.
+ */
 async function addFiles(files: File[]): Promise<void> {
+  const token = ++state.loadToken;
   const setupHost = q('#setup');
-  setupHost.innerHTML = `<div class="loading">Reading files…</div>`;
+  setupHost.innerHTML = '';
+  const label = el('span', {}, [`Reading ${files.length} file${files.length === 1 ? '' : 's'}…`]);
+  setupHost.append(
+    el('div', { class: 'stage-loading' }, [
+      el('span', { class: 'stage-spinner', 'aria-hidden': 'true' }),
+      label,
+      button(
+        'Cancel',
+        () => {
+          state.loadToken++;
+          setupHost.innerHTML = '';
+          renderSetup();
+          toast('Stopped reading. Nothing was added.', 'info', 4000);
+        },
+        'btn-ghost stage-cancel',
+      ),
+    ]),
+  );
+
+  const readTables: TableDef[] = [];
+  const readSheets: PendingSheet[] = [];
   for (const file of files) {
+    label.textContent = `Reading ${file.name}…`;
     try {
       const wb = await parseFile(file);
-      if (wb.tables.length) state.pendingTables.push(...wb.tables);
+      if (state.loadToken !== token) return; // cancelled, or a newer drop won
+      if (wb.tables.length) readTables.push(...wb.tables);
       else
         for (const sheet of wb.sheets) {
-          const label = wb.sheets.length > 1 ? `${file.name}_${sheet.name}` : file.name;
-          state.pendingSheets.push({ sheet, source: file.name, defaultName: label });
+          const name = wb.sheets.length > 1 ? `${file.name}_${sheet.name}` : file.name;
+          readSheets.push({ sheet, source: file.name, defaultName: name });
         }
     } catch (e) {
+      if (state.loadToken !== token) return;
       toast(`Skipped "${file.name}": ${msg(e)}`, 'error', 8000);
     }
+  }
+  if (state.loadToken !== token) return;
+  state.pendingTables.push(...readTables);
+  state.pendingSheets.push(...readSheets);
+  if (!state.pendingTables.length && !state.pendingSheets.length) {
+    setupHost.innerHTML = '';
+    toast('Nothing readable in those files.', 'warning', 6000);
+    return;
   }
   renderSetup();
 }
@@ -179,7 +264,7 @@ function renderSetup(): void {
   const wanted = state.expectedTables.filter((t) => !state.registered.some((r) => r.name === t));
 
   const sheetRows = state.pendingSheets.map((p, i) => {
-    const include = el('input', { type: 'checkbox' }) as HTMLInputElement;
+    const include = el('input', { type: 'checkbox', class: 'stage-include' }) as HTMLInputElement;
     include.checked = true;
     const name = el('input', { class: 'field-input col-name' }) as HTMLInputElement;
     name.value = wanted[i] ?? p.defaultName.replace(/\.[^.]+$/, '');
@@ -191,9 +276,11 @@ function renderSetup(): void {
     return { p, include, name, row };
   });
   const setups: SourceSetup[] = state.pendingTables.map((def) => tableSetupCard(def));
-  const total = sheetRows.length + setups.length;
 
-  const registerBtn = button(`Register ${total} table(s)`, async () => {
+  const countSelected = (): number =>
+    sheetRows.filter((r) => r.include.checked).length + setups.filter((x) => x.isIncluded()).length;
+
+  const registerBtn = button('', async () => {
     host.innerHTML = `<div class="loading">Starting Python (the first time, this takes a few seconds)…</div>`;
     try {
       const pyMod = await import('../core/python');
@@ -202,10 +289,14 @@ function renderSetup(): void {
       for (const r of sheetRows) {
         if (!r.include.checked) continue;
         const name = pyMod.pyIdent(r.name.value.trim() || r.p.defaultName, used);
-        await pyMod.registerPyTable(name, r.p.sheet);
-        state.registered.push({ name, sheet: r.p.sheet });
+        // Same cleaning and type detection a native Excel Table gets, so the
+        // answer does not depend on how the client happened to save the file.
+        const { sheet } = prepareSheet(r.p.sheet);
+        await pyMod.registerPyTable(name, sheet);
+        state.registered.push({ name, sheet });
       }
       for (const s of setups) {
+        if (!s.isIncluded()) continue;
         const spec = s.getSpec();
         const sheet = resolveSource(s.def, spec);
         const name = pyMod.pyIdent(spec.name, used);
@@ -228,6 +319,29 @@ function renderSetup(): void {
       toast(`Python could not start: ${msg(e)}`, 'error', 9000);
     }
   });
+
+  // The button says what it will do to how many tables, and follows the ticks.
+  const syncRegister = (): void => {
+    const n = countSelected();
+    registerBtn.textContent = n === 0 ? 'Nothing selected' : `Register ${n} table${n === 1 ? '' : 's'}`;
+    registerBtn.disabled = n === 0;
+  };
+  for (const r of sheetRows) r.include.addEventListener('change', syncRegister);
+  for (const x of setups) x.el.querySelector('.stage-include')?.addEventListener('change', syncRegister);
+
+  // Staging is a decision point, so it needs a way to back out of it. Without
+  // this the only escape from a wrongly dropped file was reloading the page.
+  const discardBtn = button(
+    'Discard these files',
+    () => {
+      state.pendingTables = [];
+      state.pendingSheets = [];
+      renderSetup();
+      renderDropzone(!state.registered.length);
+      toast('Discarded. Nothing was registered.', 'info', 3500);
+    },
+    'btn-ghost',
+  );
 
   const children: (Node | string)[] = [
     el('div', { class: 'file-list-head' }, ['Choose tables to register — untick to skip, rename as needed']),
@@ -254,8 +368,9 @@ function renderSetup(): void {
     );
   }
   if (setups.length) children.push(el('div', { class: 'setup-cards' }, setups.map((s) => s.el)));
-  children.push(el('div', { class: 'config-bar' }, [registerBtn]));
+  children.push(el('div', { class: 'config-bar' }, [registerBtn, discardBtn]));
   host.append(...children);
+  syncRegister();
 }
 
 /** Re-register every table into a freshly restarted engine. */
@@ -283,8 +398,13 @@ function renderRail(): void {
   const host = openDataPanel({
     title: 'Your data',
     label: 'Your tables and variables',
-    actionLabel: state.registered.length ? '＋ Add files' : undefined,
-    onAction: () => renderDropzone(true),
+    // Always offered, not only once something is loaded — on an empty notebook
+    // this is the most likely first click in the whole tool.
+    actionLabel: '＋ Add files',
+    // Straight to the file picker. It used to expand the drop area and leave the
+    // user to find and click it again, which is two steps to do one thing.
+    onAction: () => void chooseFiles(),
+    onDropFiles: (files) => void addFiles(files),
   });
   host.innerHTML = '';
   host.append(railTabs());
@@ -318,8 +438,12 @@ function renderRail(): void {
   }, 'btn-ghost');
 
   host.append(
+    // The panel is already headed "Your data"; this says the one thing the
+    // heading cannot — how to name a table in code.
     el('div', { class: 'schema-head' }, [
-      el('div', { class: 'file-list-head' }, [state.engine?.pandas === false ? 'Tables (tables["name"])' : 'Tables (use df_<name>)']),
+      el('div', { class: 'panel-hint' }, [
+        state.engine?.pandas === false ? 'Use tables["name"] in code' : 'Use df_<name> in code',
+      ]),
       copyBtn,
     ]),
   );
@@ -354,6 +478,14 @@ function renderRail(): void {
         el('summary', {}, [
           el('span', { class: 'schema-name' }, [state.engine?.pandas === false ? r.name : `df_${r.name}`]),
           el('span', { class: 'schema-meta' }, [` — ${r.sheet.totalRows.toLocaleString()} rows`]),
+          // The way in to everything you can do to a table after it is loaded:
+          // look at it, rename its columns, retype them, or take it back out.
+          (() => {
+            const b = button('Manage', () => openTableManager(r.name), 'btn-ghost schema-manage');
+            b.title = `Preview, rename columns or remove ${r.name}`;
+            b.addEventListener('click', (e) => e.preventDefault());
+            return b;
+          })(),
         ]),
         el('div', { class: 'schema-cols-list' },
           r.sheet.headers.map((h, i) => {
@@ -403,6 +535,160 @@ async function refreshVariables(): Promise<void> {
   const pyMod = await import('../core/python');
   state.variables = await pyMod.listVariables();
   if (state.rail === 'variables') renderRail();
+}
+
+// ---- managing a table after it is registered --------------------------------
+
+/**
+ * Everything you can do to a table once it is loaded, in one place.
+ *
+ * Registration used to be one-way: the types were decided at import and the only
+ * correction was to reload the page and start again. That is a poor bargain when
+ * one column in forty came in wrong. This shows the first rows — the fastest way
+ * to see that a column was misread — and lets the name and type be changed
+ * afterwards, or the table removed entirely.
+ */
+function openTableManager(tableName: string): void {
+  const reg = state.registered.find((r) => r.name === tableName);
+  if (!reg) return;
+
+  const host = q('#setup');
+  host.innerHTML = '';
+
+  const nameInput = el('input', { class: 'field-input', value: reg.name }) as HTMLInputElement;
+
+  const rows = reg.sheet.headers.map((h, i) => {
+    const p = profileColumn(reg.sheet, i);
+    const rename = el('input', { class: 'field-input col-name', value: h }) as HTMLInputElement;
+    const typeSel = el('select', { class: 'field-select col-type' }) as HTMLSelectElement;
+    for (const t of ['text', 'number', 'date', 'boolean'] as ColType[]) {
+      const o = el('option', { value: t }, [t[0].toUpperCase() + t.slice(1)]) as HTMLOptionElement;
+      if (t === (p.kind as string)) o.selected = true;
+      typeSel.append(o);
+    }
+    return {
+      index: i,
+      rename,
+      typeSel,
+      row: el('div', { class: 'col-row' }, [
+        el('span', { class: 'col-src' }, [h]),
+        rename,
+        typeSel,
+        el('span', { class: 'file-meta' }, [describeColumn(p)]),
+      ]),
+    };
+  });
+
+  // Five rows is enough to see that a date became a number or an ID lost its
+  // leading zeros, and short enough to sit above the editor without scrolling.
+  const preview = { ...reg.sheet, rows: reg.sheet.rows.slice(0, 5) };
+
+  const applyBtn = button('Apply changes', async () => {
+    const asked = rows.map((r) => r.rename.value.trim() || reg.sheet.headers[r.index]);
+    const names = sanitizeColumnNames(asked);
+    // Renaming onto a name that is taken gets a suffix rather than overwriting
+    // the other column — but silently ending up with "Party 2" is a surprise, so
+    // say which ones moved.
+    const changed = asked.map((a, i) => (a === names[i] ? null : `"${a}" → "${names[i]}"`)).filter(Boolean);
+    if (changed.length) toast(`Renamed to keep every column distinct: ${changed.join(', ')}.`, 'warning', 7000);
+    const types = rows.map((r) => r.typeSel.value as ColType);
+    const newRows = reg.sheet.rows.map((row) => types.map((t, i) => coerceValue(row[i] ?? null, t)));
+    const newName = pyIdentLocal(nameInput.value.trim() || reg.name, reg.name);
+    const updated: SheetData = { ...reg.sheet, name: newName, headers: names, rows: newRows };
+
+    try {
+      const pyMod = await import('../core/python');
+      if (newName !== reg.name) await pyMod.dropPyTable(reg.name);
+      await pyMod.registerPyTable(newName, updated);
+      reg.name = newName;
+      reg.sheet = updated;
+      host.innerHTML = '';
+      renderRail();
+      renderDropzone(false);
+      refreshPlaceholders();
+      toast(`"${newName}" updated. Re-run any step that used it.`, 'success', 5000);
+    } catch (e) {
+      toast(`Could not update the table: ${msg(e)}`, 'error', 8000);
+    }
+  });
+
+  const removeBtn = button(
+    'Remove this table',
+    async () => {
+      if (!confirm(`Remove "${reg.name}"? Steps that use it will stop working until you add it again.`)) return;
+      try {
+        const pyMod = await import('../core/python');
+        await pyMod.dropPyTable(reg.name);
+      } catch {
+        // Engine may not be up; the list is the source of truth either way.
+      }
+      state.registered = state.registered.filter((r) => r !== reg);
+      host.innerHTML = '';
+      renderRail();
+      renderDropzone(!state.registered.length);
+      refreshPlaceholders();
+      updateEmptyState();
+      toast(`"${tableName}" removed.`, 'info', 4000);
+    },
+    'btn-ghost nb-del',
+  );
+
+  host.append(
+    el('div', { class: 'source-card table-manager' }, [
+      el('div', { class: 'source-card-head' }, [
+        el('span', { class: 'field-label' }, ['Table name']),
+        nameInput,
+        el('span', { class: 'file-meta' }, [`${reg.sheet.totalRows.toLocaleString()} rows · ${reg.sheet.headers.length} columns`]),
+      ]),
+      el('div', { class: 'file-list-head' }, ['First 5 rows']),
+      createDataGrid(preview, { formatNumbers: true }),
+      el('div', { class: 'file-list-head' }, ['Columns']),
+      el('div', { class: 'col-editor' }, [
+        el('div', { class: 'col-row col-row-head' }, [
+          el('span', {}, ['In the file']),
+          el('span', {}, ['Name']),
+          el('span', {}, ['Type']),
+          el('span', {}, ['Now']),
+        ]),
+        ...rows.map((r) => r.row),
+      ]),
+      el('div', { class: 'config-bar' }, [
+        applyBtn,
+        button('Cancel', () => { host.innerHTML = ''; }, 'btn-ghost'),
+        removeBtn,
+      ]),
+    ]),
+  );
+  host.scrollIntoView({ block: 'nearest' });
+}
+
+/** Rename that leaves the table's own current name available to itself. */
+function pyIdentLocal(label: string, current: string): string {
+  const used = new Set(state.registered.map((r) => r.name).filter((n) => n !== current));
+  const base = label.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'table';
+  const start = /^\d/.test(base) ? `t_${base}` : base;
+  let name = start;
+  let n = 2;
+  while (used.has(name)) name = `${start}_${n++}`;
+  return name;
+}
+
+/** Re-coerce one value when a column's type is changed after registration. */
+function coerceValue(v: CellValue, type: ColType): CellValue {
+  if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) return null;
+  if (type === 'number') {
+    if (typeof v === 'number') return v;
+    const n = Number(String(v).trim().replace(/,/g, ''));
+    return Number.isFinite(n) ? n : null;
+  }
+  if (type === 'boolean') {
+    if (typeof v === 'boolean') return v;
+    const s = String(v).trim().toLowerCase();
+    if (['true', 'yes', 'y', '1'].includes(s)) return true;
+    if (['false', 'no', 'n', '0'].includes(s)) return false;
+    return null;
+  }
+  return String(v);
 }
 
 // ---- toolbar ----------------------------------------------------------------
@@ -1048,7 +1334,12 @@ function recipeContext(): Parameters<typeof snippetsFor>[0] {
     charts: state.engine?.charts !== false,
     tables: state.registered.map((r) => ({
       name: r.name,
-      columns: r.sheet.headers.map((h, i) => ({ name: h, kind: inferColumnKind(r.sheet, i) })),
+      // Distinct counts let the recipe picker prefer a column worth grouping on
+      // rather than the first text column, which is often a reference.
+      columns: r.sheet.headers.map((h, i) => {
+        const p = profileColumn(r.sheet, i);
+        return { name: h, kind: p.kind, distinct: p.distinct };
+      }),
     })),
   };
 }

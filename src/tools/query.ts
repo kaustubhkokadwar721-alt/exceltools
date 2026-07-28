@@ -33,11 +33,22 @@ let pendingTables: TableDef[] = [];
 let pendingSheets: PendingSheet[] = [];
 let engineReady = false;
 
+/**
+ * Mount the SQL workspace into `root`.
+ *
+ * DuckDB keeps the registered tables in the engine, which outlives this DOM, so
+ * resetting the list on every mount lost the *record* of tables that were still
+ * there — leave for the privacy page, come back, and your data had apparently
+ * vanished while the engine could still query it.
+ */
 export function mountQuery(root: HTMLElement): void {
-  tables = [];
-  pendingTables = [];
-  pendingSheets = [];
-  engineReady = false;
+  const resuming = tables.length > 0 || pendingTables.length > 0 || pendingSheets.length > 0;
+  if (!resuming) {
+    tables = [];
+    pendingTables = [];
+    pendingSheets = [];
+    engineReady = false;
+  }
   root.innerHTML = `
     <div class="tool-body">
       <div id="dz"></div>
@@ -46,7 +57,12 @@ export function mountQuery(root: HTMLElement): void {
       <div id="result"></div>
     </div>`;
 
-  renderDropzone(root, true);
+  renderDropzone(root, !tables.length);
+  if (resuming) {
+    renderSetup(root);
+    void renderSchema();
+    renderEditor(root);
+  }
 }
 
 /**

@@ -11,11 +11,16 @@
 // which is exactly the wall the recipes exist to remove. Defaults still come
 // from the heuristics below, so one click without touching a dropdown gives a
 // sensible step. Pure and unit-tested; the tool layer only renders and inserts.
+import { hintFromName } from './coltype';
 import type { ColumnKind } from './types';
 
 export interface SnippetColumn {
   name: string;
   kind: ColumnKind;
+  /** Distinct values, when known. Grouping is only useful on a column with few
+   *  of them — "Total by Invoice No" produces one row per invoice, which is the
+   *  table you already had. */
+  distinct?: number | null;
 }
 
 export interface SnippetTable {
@@ -60,11 +65,33 @@ const ID_LIKE = /(^|[_\s])(id|no|nos|num|number|ref|reference|code|key|serial|sr
 /** Dates arrive from Excel as numbers; totalling one is always a mistake. */
 const DATE_LIKE = /date|month|period|day|posted|quarter|year|dt$/i;
 
-const firstOf = (t: SnippetTable, kinds: ColumnKind[]): SnippetColumn | undefined =>
-  t.columns.find((c) => kinds.includes(c.kind));
+/**
+ * A sensible grouping column.
+ *
+ * Type detection now reads reference columns as text, so "first text column"
+ * started picking "Invoice No" — grouping by it yields one row per invoice,
+ * which is the table you already had. Prefer a column that names a *category*:
+ * a label by name, or one with few enough distinct values to summarise into.
+ */
+const groupCol = (t: SnippetTable): SnippetColumn | undefined => {
+  const candidates = t.columns.filter((c) => c.kind === 'text' || c.kind === 'boolean');
+  const grouping = candidates.filter((c) => hintFromName(c.name) !== 'identifier');
+  if (!grouping.length) return candidates[0] ?? t.columns[0];
 
-/** A sensible grouping column: prefer text, fall back to the first column. */
-const groupCol = (t: SnippetTable): SnippetColumn | undefined => firstOf(t, ['text', 'boolean']) ?? t.columns[0];
+  // Rank rather than filter, so there is always an answer:
+  //   1. a column that names a party or place — "by Entity" is the step an
+  //      auditor reaches for, and it beats a yes/no flag that happens to have
+  //      fewer distinct values;
+  //   2. any other text column;
+  //   3. a boolean last — a two-way split is a filter, not a summary.
+  // Within a rank, fewer distinct values makes the more readable summary.
+  const rank = (c: SnippetColumn): number => {
+    if (c.kind === 'boolean') return 2;
+    return hintFromName(c.name) === 'label' ? 0 : 1;
+  };
+  const usable = (c: SnippetColumn): number => (c.distinct != null && c.distinct > 1 ? c.distinct : 1e9);
+  return [...grouping].sort((a, b) => rank(a) - rank(b) || usable(a) - usable(b))[0];
+};
 
 /** A sensible column to add up — never an identifier, never a date. */
 const valueCol = (t: SnippetTable): SnippetColumn | undefined => {

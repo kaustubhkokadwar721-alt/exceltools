@@ -261,12 +261,37 @@ export function createDataGrid(sheet: SheetData, opts: DataGridOptions = {}): HT
  * 16,43,552 and a US one 1,643,552. Built from the number's own string form so
  * no precision is invented or lost; only the integer part is grouped.
  */
+/**
+ * Decimals shown for a value that has any. Floats arrive from a division or a
+ * rate and print as 0.30000000000000004 or 33.33333333333333, which is noise in
+ * a column you are reading down. Three places is enough to see a rate and short
+ * enough to scan.
+ *
+ * Whole numbers keep no decimal point at all — an invoice count of 24 must not
+ * become 24.000 — and a value that already prints shorter is left alone rather
+ * than padded, so 12.5 stays 12.5.
+ */
+const FLOAT_DP = 3;
+
 export function groupDigits(n: number): string {
   const s = String(n);
   const m = s.match(/^(-?)(\d+)(\.\d+)?$/);
   if (!m) return s; // exponent form, Infinity, NaN — leave exactly as-is
   const grouped = new Intl.NumberFormat(undefined, { useGrouping: true }).format(Number(m[2]));
-  return m[1] + grouped + (m[3] ?? '');
+  let frac = m[3] ?? '';
+  if (frac.length - 1 > FLOAT_DP) {
+    // Round the whole value, so 1.9999 reads as 2 rather than 1.999, then take
+    // the rounded fraction back — the integer part is already grouped.
+    const rounded = Math.abs(n).toFixed(FLOAT_DP).replace(/0+$/, '').replace(/\.$/, '');
+    const dot = rounded.indexOf('.');
+    frac = dot === -1 ? '' : rounded.slice(dot);
+    if (dot === -1 || rounded.slice(0, dot) !== m[2]) {
+      // Rounding carried into the integer part (1.9999 -> 2). Re-group it.
+      const whole = dot === -1 ? rounded : rounded.slice(0, dot);
+      return m[1] + new Intl.NumberFormat(undefined, { useGrouping: true }).format(Number(whole)) + frac;
+    }
+  }
+  return m[1] + grouped + frac;
 }
 
 function fmt(c: CellValue, numeric = false): string {

@@ -12,6 +12,8 @@ type StatusState = 'success' | 'busy' | 'error';
 let statusEl: HTMLElement | null = null;
 let shellRoot: HTMLElement | null = null;
 let currentToolId: string | null = null;
+/** Set by whichever tool owns the panel; cleared when the panel closes. */
+let panelDrop: ((files: File[]) => void) | null = null;
 
 const PANEL_COLLAPSED_KEY = 'exceltools.panel.collapsed';
 /* Below this the panel cannot sit beside the work, so it overlays it — and an
@@ -37,6 +39,9 @@ export interface DataPanelOptions {
   onAction?: () => void;
   /** Accessible name for the panel region. */
   label?: string;
+  /** Files dropped anywhere on the panel. Setting this also shows the line that
+   *  says dropping is possible — an invisible drop target helps nobody. */
+  onDropFiles?: (files: File[]) => void;
 }
 
 /**
@@ -60,6 +65,11 @@ export function openDataPanel(opts: DataPanelOptions): HTMLElement {
   } else {
     act.onclick = null;
   }
+
+  const hint = panel.querySelector<HTMLElement>('.panel-hintbar')!;
+  hint.hidden = !opts.onDropFiles;
+  panelDrop = opts.onDropFiles ?? null;
+
   return panel.querySelector<HTMLElement>('.panel-body')!;
 }
 
@@ -70,6 +80,8 @@ export function closeDataPanel(): void {
   panel.hidden = true;
   for (const id of ['#paneltoggle', '#panelbtn']) shellRoot!.querySelector<HTMLElement>(id)!.hidden = true;
   panel.querySelector<HTMLElement>('.panel-body')!.innerHTML = '';
+  panel.querySelector<HTMLElement>('.panel-hintbar')!.hidden = true;
+  panelDrop = null;
 }
 
 export function mountShell(root: HTMLElement): void {
@@ -102,8 +114,10 @@ export function mountShell(root: HTMLElement): void {
             <span class="panel-title"></span>
             <button class="panel-action btn-ghost" type="button" hidden></button>
           </div>
+          <div class="panel-hintbar" hidden>or drop files here</div>
           <div class="panel-body"></div>
           <div class="panel-foot"><span class="dot"></span>Nothing leaves this device</div>
+          <div class="panel-grip" id="panelgrip" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize the data panel"></div>
         </aside>
         <button class="panel-toggle" id="paneltoggle" type="button" hidden></button>
         <main class="app-work" id="content" tabindex="-1"></main>
@@ -116,6 +130,8 @@ export function mountShell(root: HTMLElement): void {
   wireSwitcher(root);
   wireHelp(root);
   wirePanelToggle(root);
+  wirePanelResize(root);
+  wirePanelDrop(root);
 
   const content = root.querySelector<HTMLElement>('#content')!;
   onRouteChange((route) => renderRoute(content, route));
@@ -318,6 +334,80 @@ function wirePanelToggle(root: HTMLElement): void {
     sync();
   });
   sync();
+}
+
+// ---- panel resize and drop --------------------------------------------------
+
+const PANEL_WIDTH_KEY = 'exceltools.panel.width';
+const PANEL_MIN = 190;
+const PANEL_MAX = 520;
+
+/** Drag the seam between the panel and the work surface to resize it. A column
+ *  of long column names needs a wider panel; a wide result grid needs a narrow
+ *  one, and which you want changes several times an hour. */
+function wirePanelResize(root: HTMLElement): void {
+  const shell = root.querySelector<HTMLElement>('.app-shell')!;
+  const grip = root.querySelector<HTMLElement>('#panelgrip')!;
+
+  const apply = (px: number): void => {
+    const w = Math.round(Math.min(PANEL_MAX, Math.max(PANEL_MIN, px)));
+    shell.style.setProperty('--panel-w', `${w}px`);
+    localStorage.setItem(PANEL_WIDTH_KEY, String(w));
+  };
+  const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+  if (Number.isFinite(saved) && saved >= PANEL_MIN) apply(saved);
+
+  grip.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add('is-dragging');
+    const move = (ev: PointerEvent) => apply(ev.clientX);
+    const up = () => {
+      grip.classList.remove('is-dragging');
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+  });
+
+  // Keyboard: a drag handle nobody can reach without a mouse is not a control.
+  grip.addEventListener('keydown', (e) => {
+    const step = e.key === 'ArrowLeft' ? -16 : e.key === 'ArrowRight' ? 16 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const current = root.querySelector<HTMLElement>('#datapanel')!.getBoundingClientRect().width;
+    apply(current + step);
+  });
+  grip.addEventListener('dblclick', () => {
+    shell.style.removeProperty('--panel-w');
+    localStorage.removeItem(PANEL_WIDTH_KEY);
+  });
+}
+
+/** Dropping files on the panel is the same as dropping them on the drop area —
+ *  the panel is where the files are listed, so it is where people aim. */
+function wirePanelDrop(root: HTMLElement): void {
+  const panel = root.querySelector<HTMLElement>('#datapanel')!;
+  const stop = (e: DragEvent) => {
+    if (!panelDrop) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  panel.addEventListener('dragover', (e) => {
+    stop(e);
+    if (panelDrop) panel.classList.add('is-dropping');
+  });
+  panel.addEventListener('dragleave', (e) => {
+    if (e.target === panel) panel.classList.remove('is-dropping');
+  });
+  panel.addEventListener('drop', (e) => {
+    panel.classList.remove('is-dropping');
+    if (!panelDrop) return;
+    stop(e);
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (files.length) panelDrop(files);
+  });
 }
 
 // ---- routing ----------------------------------------------------------------

@@ -132,18 +132,33 @@ html, body { overflow: hidden; }
 .app-body:not(:has(.app-panel:not([hidden]))) { grid-template-columns: 0 auto minmax(0, 1fr); }
 .app-shell.panel-collapsed .app-panel { display: none; }
 
-.app-panel { grid-column: 1; display: flex; flex-direction: column; min-height: 0; background: var(--rgy-sidebar); border-right: 1px solid var(--rgy-rule); }
+.app-panel { grid-column: 1; position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--rgy-sidebar); border-right: 1px solid var(--rgy-rule); }
+.app-panel.is-dropping { background: #e7efe4; box-shadow: inset 0 0 0 2px var(--rgy-green); }
+
+/* The seam is the resize handle: 6px of hit area on the panel's own edge, so
+   the gesture is where the eye already reads the boundary. */
+.panel-grip { position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; touch-action: none; z-index: 5; }
+.panel-grip:hover, .panel-grip.is-dragging { background: color-mix(in srgb, var(--rgy-green) 35%, transparent); }
+.panel-grip:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: -1px; }
+
+.panel-hintbar { padding: 0 12px 8px; font: 400 12px var(--rgy-font-body); color: var(--rgy-ink-faint); }
+.panel-hintbar[hidden] { display: none; }
 .app-panel[hidden] { display: none; }
-.panel-head { display: flex; align-items: center; gap: 10px; padding: 9px 12px 7px; }
+.panel-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px 6px; }
 .panel-title { flex: 1; min-width: 0; font: 600 12.5px var(--rgy-font-body); letter-spacing: .6px; text-transform: uppercase; color: var(--rgy-ink-faint); }
 .panel-action[hidden] { display: none; }
-.panel-action { min-height: 26px; padding: 2px 10px; font-size: 13px; white-space: nowrap; }
+.panel-action { min-height: 26px; padding: 2px 10px; font-size: 13px; white-space: nowrap; flex: none; }
 .panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px 10px; }
 .panel-foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--rgy-rule); font: 500 12.5px var(--rgy-font-body); color: var(--rgy-green); }
 
 /* A 14px seam between panel and work, so hiding the panel is one click from
    wherever you are rather than a trip to the app bar. */
-.panel-toggle { grid-column: 2; width: 14px; border: 0; border-right: 1px solid var(--rgy-rule); background: var(--rgy-sidebar); color: var(--rgy-ink-faint); font-size: 12px; line-height: 1; cursor: pointer; padding: 0; }
+/* Closed, this is the only way back to your data, so it stops being a hairline
+   and becomes a labelled edge you can read. */
+.panel-toggle { grid-column: 2; width: 16px; border: 0; border-right: 1px solid var(--rgy-rule); background: var(--rgy-sidebar); color: var(--rgy-ink-faint); font-size: 12px; line-height: 1; cursor: pointer; padding: 0; }
+.app-shell.panel-collapsed .panel-toggle { width: 26px; background: var(--rgy-panel-subtle); color: var(--rgy-green); font-weight: 700; }
+.app-shell.panel-collapsed .panel-toggle::after { content: "YOUR DATA"; position: absolute; writing-mode: vertical-rl; font: 600 10.5px var(--rgy-font-body); letter-spacing: .08em; margin-top: 10px; }
+.app-shell.panel-collapsed .panel-toggle { position: relative; display: flex; flex-direction: column; align-items: center; padding-top: 10px; }
 .panel-toggle[hidden] { display: none; }
 .panel-toggle:hover { background: var(--rgy-panel-subtle); color: var(--rgy-green); }
 .panel-toggle:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: -2px; }
@@ -262,10 +277,22 @@ html, body { overflow: hidden; }
 .grid-spacer { position: relative; }
 .grid-pool { position: absolute; inset: 0; }
 .grid-row { position: absolute; left: 0; right: 0; height: 28px; }
-.grid-row:hover { background: #faf8f0; }
-.grid-cell { padding: 5px 14px; border-top: 1px solid var(--rgy-rule-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14.5px; }
-.grid-header .grid-cell { border-top: 0; color: var(--rgy-ink-faint); font: 600 13.5px var(--rgy-font-body); letter-spacing: .5px; text-transform: uppercase; }
-.grid-rownum { color: #a49b85; font: 400 14px var(--rgy-font-mono); }
+.grid-row:hover { background: #f4f7f2; }
+/* Every other row tinted a shade: on a wide table this is what keeps your eye
+   on one row while it travels to the far column. */
+.grid-row:nth-child(even) { background: color-mix(in srgb, var(--rgy-panel-subtle) 45%, transparent); }
+.grid-row:nth-child(even):hover { background: #f4f7f2; }
+/* Ruled both ways, like the spreadsheet this data came out of. Horizontal rules
+   alone left each row as a band of white, so the eye had nothing to track a
+   value up to its heading — which is the one thing you do constantly when
+   checking a column. */
+.grid-cell { padding: 5px 12px; border-top: 1px solid var(--rgy-rule-soft); border-right: 1px solid var(--rgy-rule-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14.5px; }
+.grid-cell:last-child { border-right: 0; }
+.grid-header .grid-cell { border-top: 0; border-right-color: var(--rgy-rule); color: var(--rgy-ink-faint); font: 600 13.5px var(--rgy-font-body); letter-spacing: .5px; text-transform: uppercase; }
+/* The row-number column is a heading, not data — Excel greys it for the same
+   reason: it stops the eye reading 1, 2, 3 as a first column of values. */
+.grid-rownum { background: var(--rgy-panel-subtle); border-right: 1px solid var(--rgy-rule); color: var(--rgy-ink-faint); font: 400 13.5px var(--rgy-font-mono); text-align: right; }
+.grid-row:hover .grid-rownum { background: #ece7d8; }
 /* Figures line up on the right and share one width per digit, so a column of
    numbers can be read down — and a stray order of magnitude stands out. */
 .grid-num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -371,19 +398,30 @@ html, body { overflow: hidden; }
 .nb-recipes-head strong { font: 600 16px var(--rgy-font-body); }
 .nb-recipes-head span, .nb-recipes-empty { color: var(--rgy-ink-soft); font-size: 14.5px; }
 .nb-recipe-group { margin: 12px 0 6px; font: 600 13px var(--rgy-font-body); letter-spacing: .6px; text-transform: uppercase; color: var(--rgy-ink-faint); }
-.nb-recipe-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
-.nb-recipe { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; padding: 10px 12px; border: 1px solid var(--rgy-rule); border-radius: var(--rgy-radius-sm); background: var(--rgy-panel); font-family: var(--rgy-font-body); transition: border-color .15s var(--rgy-ease); }
+.nb-recipe-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+/* Rows, not prose: the sentence, then the explanation, then the button, each on
+   its own line at a fixed position. The card used to reflow around the length of
+   whichever column names were chosen, so every card in the grid sat at a
+   different height and the Insert buttons never lined up. */
+.nb-recipe { display: grid; grid-template-rows: auto 1fr auto; align-items: start; gap: 8px; text-align: left; padding: 12px 14px; border: 1px solid var(--rgy-rule); border-radius: var(--rgy-radius-sm); background: var(--rgy-panel); font-family: var(--rgy-font-body); transition: border-color .15s var(--rgy-ease); }
 .nb-recipe:hover, .nb-recipe:focus-within { border-color: var(--rgy-green); }
-.nb-recipe-label { font: 600 14.5px/1.9 var(--rgy-font-body); color: var(--rgy-ink); }
+/* The sentence wraps as a sentence — the dropdowns sit inline with the words
+   and the line-height leaves room for them without the text jumping. */
+.nb-recipe-label { display: block; font: 600 15px/2.1 var(--rgy-font-body); color: var(--rgy-ink); }
 .nb-recipe-blurb { font-size: 13.5px; line-height: 1.45; color: var(--rgy-ink-soft); }
 /* The dropdowns sit inside the sentence: "Total [Amount] by [Status]". */
-.recipe-pick { margin: 0 2px; padding: 1px 22px 1px 7px; max-width: 190px; border: 1px solid var(--rgy-input); border-radius: 6px; background: var(--rgy-inset) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%234a4538' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 7px center/9px; font: 500 14px var(--rgy-font-mono); color: var(--rgy-green); appearance: none; cursor: pointer; }
+/* Big enough to read and to hit. These were 14px in a 1px-tall box, which is
+   under half the 24px minimum for a pointer target and unreadable next to the
+   sentence they sit inside. */
+.recipe-pick { margin: 0 3px; padding: 4px 26px 4px 9px; min-height: 28px; max-width: 260px; border: 1px solid var(--rgy-input); border-radius: 6px; background: var(--rgy-inset) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%234a4538' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 7px center/9px; font: 500 14.5px var(--rgy-font-mono); color: var(--rgy-green); appearance: none; cursor: pointer; vertical-align: baseline; }
 .recipe-pick:hover { border-color: var(--rgy-green); }
 .recipe-pick:focus { outline: 2px solid var(--rgy-green); outline-offset: 1px; }
 /* A single choice is not a choice — render it as plain text, and let a long
    table name show in full rather than clipping to "all_returns_consolida". */
 .recipe-pick.is-fixed { max-width: none; background-image: none; padding-right: 7px; border-color: transparent; background-color: transparent; cursor: default; pointer-events: none; }
-.recipe-insert { min-height: 30px; padding: 4px 16px; font-size: 14px; margin-top: 2px; }
+/* Bottom row of the card's grid, so every Insert in a row sits on one line. */
+.recipe-insert { align-self: end; justify-self: start; min-height: 32px; padding: 5px 18px; font-size: 14px; }
+.nb-recipe-blurb { align-self: start; }
 
 /* Cells — a left stripe carries run state, so scanning a long notebook shows
    at a glance what ran, what is running, and what broke. */
@@ -589,6 +627,25 @@ html, body { overflow: hidden; }
 .col-row .col-src { font-weight: 500; }
 .col-row .field-input, .col-row .field-select { min-width: 0; min-height: 34px; padding: 6px 10px; }
 .col-row input[type="checkbox"]:not(:checked) ~ * { opacity: .5; }
+
+/* ---- Staging, and managing a table afterwards ---- */
+.stage-loading { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--rgy-rule); border-left: 3px solid var(--rgy-gold); border-radius: var(--rgy-radius); background: var(--rgy-panel); font-size: 14.5px; }
+.stage-loading .stage-cancel { margin-left: auto; min-height: 30px; padding: 4px 14px; }
+.stage-spinner { width: 14px; height: 14px; flex: none; border: 2px solid var(--rgy-input); border-top-color: var(--rgy-green); border-radius: 50%; animation: xt-spin .7s linear infinite; }
+@keyframes xt-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .stage-spinner { animation: none; } }
+
+/* An unticked table stays legible but plainly out of the run. */
+.source-card.is-excluded { opacity: .55; border-left-color: var(--rgy-rule); }
+.source-card.is-excluded .col-editor { display: none; }
+
+.table-manager { border-left-color: var(--rgy-green); }
+.table-manager .grid-viewport { height: auto; max-height: 190px; }
+.table-manager .col-row { grid-template-columns: minmax(120px, 1.1fr) minmax(120px, 1.2fr) 130px 150px; }
+.table-manager .col-row-head { color: var(--rgy-ink-faint); }
+.table-manager .config-bar .nb-del { margin-left: auto; }
+.schema-manage { min-height: 22px; padding: 0 8px; font-size: 12px; margin-left: auto; }
+.schema-block > summary { align-items: center; }
 
 /* ---- Compare drops ---- */
 .compare-drops { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

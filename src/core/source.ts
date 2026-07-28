@@ -1,6 +1,7 @@
 // Resolve a native table (its sliced grid) + a user SourceSpec into a normal
 // SheetData: column selection, renaming, and type coercion (or skip). Pure and
 // testable — no SheetJS, no DOM.
+import { detectColumnType, sanitizeColumnNames } from './coltype';
 import type { TableDef, SourceSpec, SourceColumn, ColType, SheetData, CellValue } from './types';
 
 // Numeric text like "1,000" or "-42.5" (shared shape with transform.ts).
@@ -8,13 +9,27 @@ const NUMERIC = /^-?\d{1,3}(?:,\d{3})+(?:\.\d+)?$|^-?\d+(?:\.\d+)?$/;
 const BOOL_TRUE = new Set(['true', 'yes', 'y', '1']);
 const BOOL_FALSE = new Set(['false', 'no', 'n', '0']);
 
-/** Default spec for a freshly detected table: all columns in, auto types. */
+/**
+ * Default spec for a freshly detected table: every column in, names cleaned, and
+ * each type already *decided* rather than left as "Auto".
+ *
+ * Showing "Auto" in the setup card and again in the schema afterwards told the
+ * user nothing — they registered a table and still had to guess what it had
+ * settled on. The detection runs here, the answer is what the dropdown shows,
+ * and changing it is an override of something visible.
+ */
 export function buildDefaultSpec(def: TableDef): SourceSpec {
   const header = (def.grid[0] as CellValue[] | undefined) ?? [];
-  const names = def.columns.length ? def.columns : header.map((h, i) => String(h ?? colLetter(i)));
+  const sources = def.columns.length ? def.columns : header.map((h, i) => String(h ?? colLetter(i)));
+  const body = def.grid.slice(1) as CellValue[][];
+  const clean = sanitizeColumnNames(sources.map(String));
   return {
     name: def.name,
-    columns: names.map((n) => ({ source: n, name: n, include: true, type: 'auto' as ColType })),
+    columns: sources.map((source, i) => {
+      const gi = header.findIndex((h) => String(h ?? '') === source);
+      const values = body.map((r) => r[gi === -1 ? i : gi] ?? null);
+      return { source: String(source), name: clean[i], include: true, type: detectColumnType(clean[i], values) };
+    }),
     skipTypeDetection: false,
   };
 }
@@ -110,3 +125,16 @@ function colLetter(i: number): string {
 }
 
 export type { SourceColumn };
+
+/**
+ * The same cleaning and type detection for a plain sheet, which reaches the
+ * notebook without a TableDef and so never passed through buildDefaultSpec.
+ * A sheet dropped straight in got raw headers and raw values; a native Excel
+ * Table got cleaned ones. Same file, two answers, depending on how it was saved.
+ */
+export function prepareSheet(sheet: SheetData): { sheet: SheetData; types: ColType[] } {
+  const headers = sanitizeColumnNames(sheet.headers.map(String));
+  const types = headers.map((h, i) => detectColumnType(h, sheet.rows.map((r) => r[i] ?? null)));
+  const rows = sheet.rows.map((r) => types.map((t, i) => coerceCell(r[i] ?? null, t)));
+  return { sheet: { ...sheet, headers, rows }, types };
+}
