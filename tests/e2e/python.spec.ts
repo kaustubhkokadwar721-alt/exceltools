@@ -9,6 +9,21 @@ const STAFF = xlsxBase64([
   ...Array.from({ length: 30 }, (_, i) => [i + 1, ['Fin', 'Ops', 'IT'][(i + 1) % 3], (i + 1) * 10] as (string | number)[]),
 ]);
 
+// Two genuinely numeric columns and two category columns, so a recipe has
+// something to be re-pointed *at*. STAFF cannot serve: its "ID" is a reference,
+// which type detection now reads as text, so it is correctly not offered as a
+// column to total.
+const LEDGER = xlsxBase64([
+  ['Ref', 'Dept', 'Region', 'Amt', 'Tax'],
+  ...Array.from({ length: 30 }, (_, i) => [
+    `R-${i + 1}`,
+    ['Fin', 'Ops', 'IT'][(i + 1) % 3],
+    ['East', 'West'][(i + 1) % 2],
+    (i + 1) * 10,
+    (i + 1) * 2,
+  ] as (string | number)[]),
+]);
+
 const pyDir = join(process.cwd(), 'public', 'pyodide');
 const staged = (prefix: string) => existsSync(pyDir) && readdirSync(pyDir).some((f) => f.startsWith(prefix));
 const pandasStaged = staged('pandas-');
@@ -128,16 +143,25 @@ test('notebook: recipes insert runnable code using the real column names', async
 test('notebook: a recipe can be re-pointed at other columns without editing Python', async ({ page }) => {
   test.skip(!pandasStaged, 'pandas wheels not staged in this build');
   test.setTimeout(240_000);
-  await bootNotebook(page);
+  await page.goto('/#/tool/python');
+  await dropXlsx(page, '.dropzone', 'ledger.xlsx', LEDGER);
+  await page.waitForSelector('.sheet-stage-row input.col-name', { timeout: 60_000 });
+  await page.fill('.sheet-stage-row input.col-name', 'ledger');
+  await page.click('#setup button:has-text("Register")');
+  await page.waitForSelector('.schema-block', { timeout: 150_000 });
   await page.waitForSelector('.nb-start .nb-recipe');
 
-  // "Total {Amt} by {Dept}" — change what is totalled and what it groups by.
   const card = page.locator('.nb-recipe', { hasText: 'Total' }).first();
-  await card.locator('.recipe-pick').nth(0).selectOption('ID');
-  await card.locator('.recipe-pick').nth(1).selectOption('Dept');
+  const value = card.locator('.recipe-pick').nth(0);
+  const group = card.locator('.recipe-pick').nth(1);
+
+  // Which columns are on offer is pinned in tests/unit/snippets.test.ts, where
+  // it can be checked without depending on which wheels this build staged.
+  await value.selectOption('Tax');
+  await group.selectOption('Dept');
   await card.locator('button:has-text("Insert")').click();
 
-  await expect(page.locator('.ce-input').first()).toHaveValue(/groupby\("Dept", as_index=False\)\["ID"\]/);
+  await expect(page.locator('.ce-input').first()).toHaveValue(/groupby\("Dept", as_index=False\)\["Tax"\]/);
   await page.waitForSelector('.nb-out-host .grid-row', { timeout: 90_000 });
 });
 
