@@ -6,6 +6,9 @@ import { icon } from './icons';
 
 export interface DropzoneOptions {
   multiple?: boolean;
+  /** Extensions this tool can read. Defaults to the spreadsheet set; the PDF
+   *  tool passes its own so a .pdf is accepted there and nowhere else. */
+  extensions?: readonly string[];
   onFiles: (files: File[]) => void;
   onError: (message: string) => void;
   onWarning?: (message: string) => void;
@@ -18,7 +21,8 @@ export interface DropzoneOptions {
  * rather than skipped. The whole row is still the drop target.
  */
 export function createDropzone(opts: DropzoneOptions): HTMLElement {
-  const accept = SUPPORTED_EXTENSIONS.map((e) => `.${e}`).join(',');
+  const exts = opts.extensions ?? SUPPORTED_EXTENSIONS;
+  const accept = exts.map((e) => `.${e}`).join(',');
   const label = `Add ${opts.multiple ? 'files' : 'a file'}`;
   const el = document.createElement('div');
   el.className = 'dropzone';
@@ -39,7 +43,7 @@ export function createDropzone(opts: DropzoneOptions): HTMLElement {
     if (!files.length) return;
     const accepted: File[] = [];
     for (const f of files) {
-      const v = validateFile(f);
+      const v = validateFile(f, exts);
       if (!v.ok) {
         opts.onError(v.error!);
         continue;

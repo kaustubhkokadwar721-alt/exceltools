@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { xlsxBase64, dropXlsx } from './helpers';
+import { xlsxBase64, dropXlsx, dropFile, pdfBase64 } from './helpers';
 
 // The core privacy guarantee, guarded against regression: exercising the tools —
 // including the DuckDB engine — must not cause any request to leave the origin.
@@ -24,6 +24,16 @@ test('no external network requests during real tool use', async ({ page, baseURL
   await page.goto('/#/tool/convert');
   await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);
   await page.waitForSelector('.config-bar');
+
+  // PDF tier: pdf.js will fetch cmaps, standard font data and its own worker
+  // from a CDN unless it is configured not to. This is the guard on that.
+  await page.goto('/#/tool/pdf');
+  await dropFile(page, '.dropzone', 'statement.pdf', pdfBase64([[
+    ['Date', 50, 100], ['Particulars', 150, 100], ['Amount', 320, 100],
+    ['01/04/2025', 50, 118], ['Opening Balance', 150, 118], ['1,000.00', 320, 118],
+    ['02/04/2025', 50, 136], ['Cash deposit', 150, 136], ['500.00', 320, 136],
+  ]]));
+  await page.waitForSelector('#preview .grid-row', { timeout: 60_000 });
 
   // Intermediate tier: load the DuckDB engine and run a query.
   await page.goto('/#/tool/query');

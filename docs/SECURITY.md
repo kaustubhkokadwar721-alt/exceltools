@@ -93,9 +93,17 @@ All self-hosted; none loaded from a CDN at runtime.
 | `xlsx` (SheetJS) | `0.18.5` | Parse/serialize spreadsheets |
 | `fflate` | `^0.8.2` | Zip multi-file outputs |
 | `@duckdb/duckdb-wasm` | `^1.29.0` | In-browser SQL engine |
+| `pdfjs-dist` | `^6.2.108` | Read the text layer of PDFs (PDF tables tool) |
+
+`pdfjs-dist` is configured for reading only — `disableFontFace`, `useSystemFonts:
+false` and `useWorkerFetch: false`, so it renders nothing and issues no request of
+any kind. Its worker is bundled and served same-origin; a CDN `workerSrc` would be
+blocked by `script-src 'self'`, which is the intended behaviour. PDF passwords are
+passed to the reader for a single open and never stored.
 
 Fonts (Spectral, Hanken Grotesk) and icons are bundled locally with their OFL /
-Lucide licences in `docs/licenses/`.
+Lucide licences in `docs/licenses/`; pdf.js ships under Apache-2.0
+(`docs/licenses/LICENSE-pdfjs.txt`).
 
 ## Regression guards
 
