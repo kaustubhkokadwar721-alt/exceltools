@@ -13,7 +13,7 @@ export interface SheetData {
 
 export type CellValue = string | number | boolean | null;
 
-/** Value shape inferred from a column's data — drives schema hints and recipes. */
+/** Value shape inferred from a column's data — drives the schema hints. */
 export type ColumnKind = 'number' | 'boolean' | 'text';
 
 /** A native Excel Table (ListObject), extracted with its own name + range and

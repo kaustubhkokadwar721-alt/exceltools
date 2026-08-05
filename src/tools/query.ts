@@ -14,6 +14,9 @@ import { downloadBlob } from '../core/fileio';
 import type { SheetData, ExportFormat, TableDef } from '../core/types';
 
 const PREVIEW_ROWS = 5000;
+// Enough rows for an assistant to see how dates, amounts and codes are written,
+// few enough that a careless paste is not a data dump.
+const AI_SAMPLE_ROWS = 5;
 
 interface TableInfo {
   name: string;
@@ -218,28 +221,49 @@ async function renderSchema(): Promise<void> {
     // Fall back to name-only pills if describe fails.
   }
 
-  const copyBtn = button('Copy schema for AI', async () => {
-    const text = schemas.length
-      ? duck.schemaText(schemas)
-      : tables.map((t) => `Table "${t.name}": ${t.columns.join(', ')}`).join('\n');
+  // Two buttons rather than one with a tick-box: the second puts real cell
+  // values from the file on the clipboard, and that is a decision the user
+  // should make by choosing it, not by leaving a checkbox as they found it.
+  const copy = async (withRows: boolean, note: string): Promise<void> => {
+    if (!schemas.length) {
+      await handOver(tables.map((t) => `Table "${t.name}": ${t.columns.join(', ')}`).join('\n'), note);
+      return;
+    }
+    const samples = withRows ? await duck.sampleRows(schemas.map((s) => s.table), AI_SAMPLE_ROWS) : undefined;
+    await handOver(duck.schemaText(schemas, samples), note);
+  };
+
+  const handOver = async (text: string, note: string): Promise<void> => {
     try {
       await navigator.clipboard.writeText(text);
-      toast('Schema copied — paste it into your AI assistant along with what you want.', 'success', 5000);
+      toast(note, 'success', 7000);
     } catch {
       // Clipboard can be blocked; show the text for manual copy.
       const ta = el('textarea', { class: 'sql-editor', rows: '10' }) as HTMLTextAreaElement;
       ta.value = text;
       host.append(ta);
       ta.select();
-      toast('Select and copy the schema below.', 'info', 5000);
+      toast('Select and copy the text below.', 'info', 5000);
     }
-  }, 'btn-ghost');
+  };
+
+  const copyBtn = button('Copy schema for AI', () => void copy(
+    false,
+    'Copied: your table and column names, no data. Paste it into your AI assistant along with what you want.',
+  ), 'btn-ghost');
+  copyBtn.title = 'Table names, column names and column types only — no cell values leave this panel';
+
+  const copyRowsBtn = button(`Copy with first ${AI_SAMPLE_ROWS} rows`, () => void copy(
+    true,
+    `Copied, including the first ${AI_SAMPLE_ROWS} rows of each table — real data from your file. Check what you are pasting if the assistant is outside your firm.`,
+  ), 'btn-ghost');
+  copyRowsBtn.title = `Adds the first ${AI_SAMPLE_ROWS} rows of each table, so the assistant can see how dates, amounts and codes are actually written`;
 
   // The panel is already titled "Your data"; this says the one thing the title
   // does not — that these names are what your SQL has to say.
   const head = el('div', { class: 'schema-head' }, [
     el('div', { class: 'panel-hint' }, ['Use these names in your SQL']),
-    copyBtn,
+    el('div', { class: 'schema-copy' }, [copyBtn, copyRowsBtn]),
   ]);
 
   const list = el('div', { class: 'schema-detail' });

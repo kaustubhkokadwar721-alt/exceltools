@@ -135,7 +135,7 @@ export const TOOLS: ToolDef[] = [
       'Add files, untick or rename what you want, then Register. Each sheet becomes a table called df_<name> — the first run starts Python, which takes a few seconds once.',
       'Each cell runs on its own — Shift+Enter runs it and moves on; the last line of a cell is displayed, and print() output and charts appear underneath. Cells remember each other, so build one step at a time.',
       'If a step fails you get a plain-English explanation under the cell, with the technical detail folded away. Select a column in the Your data panel to drop its exact name into your code.',
-      'Not sure how to write a step? Use Copy for AI assistant in the Your data panel, paste it into the assistant of your choice with what you want in plain English, and paste the code back into a cell.',
+      'Not sure how to write a step? Use Copy for AI assistant in the Your data panel, paste it into the assistant of your choice with what you want in plain English, and paste the code back into a cell. Copy with first 5 rows sends a sample of the data too, so the assistant can see how your dates and amounts are actually written — real values, so use it knowingly.',
       'Your work is kept in this browser as you type, so a closed tab is recoverable. Save writes an .ipynb with your results and charts included — it opens in real Jupyter too.',
     ],
     helpNote: 'Runs entirely in this browser. Nothing is uploaded, and it cannot read files from your computer — only what you drop in.',

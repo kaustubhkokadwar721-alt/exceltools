@@ -1,7 +1,7 @@
 // What the notebook knows about the tables you registered: column kinds, and
 // the plain-text schema an AI assistant needs to write code against them.
 // Lifted out of the tool UI so both are testable and reusable.
-import type { SheetData, ColumnKind } from './types';
+import type { SheetData, ColumnKind, CellValue } from './types';
 
 const SAMPLE_ROWS = 200;
 
@@ -68,12 +68,43 @@ export interface SchemaTable {
   sheet: SheetData;
 }
 
+/** How a single cell is written into the sample block. Long free text is cut:
+ *  an assistant needs the shape of a value, not a paragraph of it. */
+function sampleCell(v: CellValue): string {
+  if (v === null || v === undefined || v === '') return '';
+  const s = String(v);
+  return s.length > 60 ? `${s.slice(0, 57)}…` : s;
+}
+
+/**
+ * The first few rows of a table, pipe-separated with the header row on top.
+ * Types alone do not say that "Status" holds Filed/Late, that dates arrive as
+ * "31-03-2025", or that amounts carry a currency prefix — the rows do.
+ *
+ * These are real cell values from the user's file, so this is only ever
+ * produced on an explicit request, never folded into the default copy.
+ */
+export function sampleRowsText(sheet: SheetData, limit: number): string[] {
+  const rows = sheet.rows.slice(0, limit);
+  if (!rows.length) return [];
+  const lines = [`  First ${rows.length} row${rows.length === 1 ? '' : 's'}:`, `    ${sheet.headers.join(' | ')}`];
+  for (const r of rows) lines.push(`    ${sheet.headers.map((_, i) => sampleCell(r[i])).join(' | ')}`);
+  return lines;
+}
+
 /**
  * The preamble users copy into an AI assistant. It states the exact variable
  * names, the columns and their kinds, and the notebook's display rules — so the
  * code that comes back runs here without editing.
+ *
+ * `sampleRows` adds the first N rows of each table. Off by default: the schema
+ * is a description of the file, the rows are the file.
  */
-export function schemaTextForAI(tables: SchemaTable[], engine: { pandas: boolean; charts: boolean }): string {
+export function schemaTextForAI(
+  tables: SchemaTable[],
+  engine: { pandas: boolean; charts: boolean },
+  sampleRows = 0,
+): string {
   const lines = [
     engine.pandas
       ? 'I am working in an offline Python notebook in my browser (Pyodide) with pandas' +
@@ -84,9 +115,16 @@ export function schemaTextForAI(tables: SchemaTable[], engine: { pandas: boolean
       : 'I am working in an offline Python notebook in my browser. There is no pandas — each table below is a list of dicts at tables["<name>"]. Please write plain Python (standard library only) for my request; the last expression in a cell is displayed.',
     '',
   ];
+  if (sampleRows > 0) {
+    lines.push(
+      'Sample rows are shown under each table so you can see how the values are actually written. They are a preview only — write code against the whole table, not these rows.',
+      '',
+    );
+  }
   for (const t of tables) {
     lines.push(`Table "${t.name}"${engine.pandas ? ` (DataFrame df_${t.name})` : ''} — ${t.sheet.totalRows.toLocaleString()} rows:`);
     t.sheet.headers.forEach((h, i) => lines.push(`  - "${h}" ${inferColumnKind(t.sheet, i)}`));
+    if (sampleRows > 0) lines.push(...sampleRowsText(t.sheet, sampleRows));
     lines.push('');
   }
   lines.push('My request: ');

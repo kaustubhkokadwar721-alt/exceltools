@@ -632,3 +632,26 @@ test('notebook: column types are decided at import, never left as "Auto"', async
   expect(types[0]).toContain('text');
   expect(types[2]).toContain('number');
 });
+
+test('notebook: the schema can be handed to an AI assistant, with or without data', async ({ page, context }) => {
+  test.setTimeout(240_000);
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await bootNotebook(page);
+  const clip = () => page.evaluate(() => navigator.clipboard.readText());
+
+  // The default carries the shape of the data and none of the data.
+  await page.click('#datapanel button:has-text("Copy for AI assistant")');
+  const schema = await clip();
+  expect(schema).toContain('Table "payroll"');
+  expect(schema).toContain('"Amt"');
+  expect(schema).not.toContain('Fin'); // no cell values
+
+  // The second button is a separate, deliberate choice, and says what it did.
+  await page.click('#datapanel button:has-text("Copy with first 5 rows")');
+  // .last(): the first copy's toast is still on screen behind this one.
+  await expect(page.locator('.toast').last()).toContainText('real data from your file');
+  const withRows = await clip();
+  expect(withRows).toContain('First 5 rows:');
+  expect(withRows).toContain('ID | Dept | Amt');
+  expect(withRows).toContain('Fin'); // the values, as they are actually written
+});
