@@ -1,20 +1,19 @@
 // Python notebook — a notebook for people who don't write Python.
 //
 // The engine is Pyodide in a worker; everything here is the part that makes it
-// usable by an accountant: your spreadsheets arrive as named tables, a recipe
-// list writes the first version of each step with your own column names, errors
-// come back as sentences instead of tracebacks, work is saved as you type, and
-// a run that goes wrong can be stopped.
+// usable by an accountant: your spreadsheets arrive as named tables, clicking a
+// column inserts its name, errors come back as sentences instead of tracebacks,
+// work is saved as you type, and a run that goes wrong can be stopped.
 //
-// Layout of this file: state → staging → right rail → toolbar → cell views →
-// outputs → execution → recipes → save/open/autosave.
+// Layout of this file: state → staging → data panel → toolbar → cell views →
+// outputs → execution → save/open/autosave.
 import { createDropzone } from '../ui/dropzone';
 import { createDataGrid } from '../ui/datagrid';
 import { toast } from '../ui/toast';
 import { el, button } from '../ui/controls';
 import { createCodeEditor, type CodeEditor } from '../ui/codeeditor';
 import { createSourceBar } from '../ui/toolchrome';
-import { openDataPanel, setCrumb } from '../app/shell';
+import { openDataPanel, setCrumb, setHelpExtra, setAppStatus } from '../app/shell';
 import { tableActions, imageActions } from '../ui/resultactions';
 import { tableSetupCard, type SourceSetup } from '../ui/source-setup';
 import { parseFile, serializeWorkbook } from '../core/parser';
@@ -23,11 +22,10 @@ import { downloadBlob, pickFiles } from '../core/fileio';
 import { toIpynb, fromIpynb, titleFromIpynb, renderMarkdown, type NotebookCell } from '../core/notebook';
 import { profileColumn, describeColumn, schemaTextForAI } from '../core/schema';
 import { explainPythonError } from '../core/pyerrors';
-import { snippetsFor, columnChoices, defaultValues, type Snippet } from '../core/snippets';
 import { saveDraft, loadDraft, clearDraft, describeAge, isDraftEnabled, setDraftEnabled } from '../core/nbstore';
 import { sanitizeColumnNames } from '../core/coltype';
-import type { SheetData, TableDef, ColumnKind, ColType, CellValue } from '../core/types';
-import type { CellResult, EngineInfo, PyVariable } from '../core/python';
+import type { SheetData, TableDef, ColType, CellValue } from '../core/types';
+import type { CellResult, EngineInfo } from '../core/python';
 
 const PREVIEW_ROWS = 2000;
 const AUTOSAVE_MS = 800;
@@ -75,8 +73,6 @@ const state = {
   unreviewed: false,
   cellSeq: 1,
   execSeq: 1,
-  rail: 'tables' as 'tables' | 'variables',
-  variables: [] as PyVariable[],
   saveTimer: 0 as unknown as ReturnType<typeof setTimeout>,
   /** Bumped by every load; a read whose token is stale discards its result. */
   loadToken: 0,
@@ -126,8 +122,6 @@ export function mountPython(host: HTMLElement): void {
     state.pendingSheets = [];
     state.engine = null;
     state.starting = false;
-    state.variables = [];
-    state.rail = 'tables';
     state.title = '';
     state.expectedTables = [];
     state.unreviewed = false;
@@ -140,7 +134,6 @@ export function mountPython(host: HTMLElement): void {
       <div id="dz"></div>
       <div id="setup"></div>
       <div id="nbtools"></div>
-      <div id="recipes" class="nb-recipes" hidden></div>
       <div id="nb"></div>
     </div>`;
 
@@ -381,19 +374,6 @@ async function reregister(): Promise<void> {
 
 // ---- right rail: your tables, and what's in memory --------------------------
 
-function railTabs(): HTMLElement {
-  const tab = (id: 'tables' | 'variables', label: string): HTMLButtonElement => {
-    const b = button(label, () => {
-      state.rail = id;
-      renderRail();
-      if (id === 'variables') void refreshVariables();
-    }, `rail-tab${state.rail === id ? ' is-on' : ''}`);
-    b.setAttribute('aria-pressed', String(state.rail === id));
-    return b;
-  };
-  return el('div', { class: 'rail-tabs' }, [tab('tables', 'Your tables'), tab('variables', 'In memory')]);
-}
-
 function renderRail(): void {
   const host = openDataPanel({
     title: 'Your data',
@@ -407,18 +387,11 @@ function renderRail(): void {
     onDropFiles: (files) => void addFiles(files),
   });
   host.innerHTML = '';
-  host.append(railTabs());
-
-  if (state.rail === 'variables') {
-    host.append(renderVariables());
-    return;
-  }
 
   if (!state.registered.length) {
     host.append(
       el('div', { class: 'rail-empty' }, [
-        el('p', {}, ['No tables yet.']),
-        el('p', {}, ['Add a spreadsheet and select Register. Each sheet becomes a table you can use by name.']),
+        el('p', {}, ['Add a spreadsheet to get started.']),
       ]),
     );
     return;
@@ -506,35 +479,6 @@ function renderRail(): void {
     );
   }
   host.append(list);
-}
-
-function renderVariables(): HTMLElement {
-  const wrap = el('div', { class: 'schema-detail' });
-  if (!state.engine) {
-    wrap.append(el('div', { class: 'rail-empty' }, [el('p', {}, ['Run a cell first — this shows everything Python is holding in memory.'])]));
-    return wrap;
-  }
-  if (!state.variables.length) {
-    wrap.append(el('div', { class: 'rail-empty' }, [el('p', {}, ['Nothing yet. Anything you create in a cell (a total, a filtered table) appears here.'])]));
-    return wrap;
-  }
-  for (const v of state.variables) {
-    wrap.append(
-      el('div', { class: 'var-row' }, [
-        el('span', { class: 'schema-name' }, [v.name]),
-        el('span', { class: 'var-kind' }, [v.type]),
-        el('span', { class: 'schema-meta' }, [v.detail]),
-      ]),
-    );
-  }
-  return wrap;
-}
-
-async function refreshVariables(): Promise<void> {
-  if (!state.engine) return;
-  const pyMod = await import('../core/python');
-  state.variables = await pyMod.listVariables();
-  if (state.rail === 'variables') renderRail();
 }
 
 // ---- managing a table after it is registered --------------------------------
@@ -702,9 +646,6 @@ function renderToolbar(): void {
   stopBtn.disabled = !state.cells.some((c) => c.running);
   stopBtn.title = 'Stop the running cell by restarting Python';
 
-  const recipesBtn = button('✚ Insert a step', () => toggleRecipes(), 'btn-ghost');
-  recipesBtn.title = 'Common tasks, written out with your own column names';
-
   // Grouped by what they do — run, build, file — so the controls read as three
   // decisions rather than a row of equal-weight buttons. The file group carries
   // short labels with full tooltips, because it is the least-used group and was
@@ -723,7 +664,6 @@ function renderToolbar(): void {
     runAllBtn,
     stopBtn,
     divider(),
-    recipesBtn,
     button('＋ Code', () => insertCell('code'), 'btn-ghost'),
     button('＋ Note', () => insertCell('markdown'), 'btn-ghost'),
     divider(),
@@ -763,8 +703,8 @@ function renderToolbar(): void {
     scheduleSave();
   });
 
-  const keys = el('details', { class: 'nb-keys' }, [
-    el('summary', {}, ['Keyboard shortcuts']),
+  const keys = el('div', { class: 'nb-keys' }, [
+    el('h4', {}, ['Keyboard shortcuts']),
     el('div', { class: 'nb-keys-grid' }, [
       ...[
         ['Shift + Enter', 'Run this cell, go to the next'],
@@ -777,31 +717,23 @@ function renderToolbar(): void {
     ]),
   ]);
 
-  host.append(
-    el('div', { class: 'nb-titlebar' }, [titleInput]),
-    toolbar,
-    el('div', { class: 'nb-toolbar-foot' }, [
-      keys,
-      el('span', { class: 'nb-badge', id: 'nb-engine' }, [engineLabel()]),
-      draftToggle,
-    ]),
-  );
+  host.append(el('div', { class: 'nb-titlebar' }, [titleInput]), toolbar);
+  // Reference and settings live behind the help button, not on the work surface.
+  setHelpExtra(draftToggle, keys);
 }
 
-function engineLabel(): string {
-  if (state.starting) return 'starting Python…';
-  if (!state.engine) return 'Python starts on your first run';
-  const bits = ['Python ready'];
-  if (state.engine.pandas) bits.push('pandas');
-  if (state.engine.charts) bits.push('charts');
-  return bits.join(' · ');
-}
-
+/**
+ * Engine state belongs in the app bar's status pill, where every tool reports
+ * progress — not in a badge on the work surface saying "Python starts on your
+ * first run", which is a sentence about our internals, not about your work.
+ */
 function setEngineLabel(): void {
-  const badge = root().querySelector('#nb-engine');
-  if (badge) badge.textContent = engineLabel();
+  const running = state.cells.some((c) => c.running);
+  if (state.starting) setAppStatus('Starting…', 'busy');
+  else if (running) setAppStatus('Running…', 'busy');
+  else setAppStatus('Ready', 'success');
   const stop = root().querySelector<HTMLButtonElement>('.nb-stop');
-  if (stop) stop.disabled = !state.cells.some((c) => c.running);
+  if (stop) stop.disabled = !running;
 }
 
 // ---- cell views -------------------------------------------------------------
@@ -839,11 +771,13 @@ function buildCell(cell: UICell): HTMLElement {
   }, 'nb-fold');
   view.foldBtn = fold;
 
+  // Run lives in the gutter, always on screen, as it does in Jupyter and Colab —
+  // it is the one control you reach for constantly. Everything else is
+  // occasional, so it floats above the cell's top edge only while you are there.
   const actions = el('div', { class: 'nb-actions' });
   if (cell.kind === 'code') {
-    view.runBtn = button('▶', () => void runOne(cell, 'stay'), 'btn-ghost nb-act nb-run');
+    view.runBtn = button('▶', () => void runOne(cell, 'stay'), 'nb-run');
     view.runBtn.title = 'Run this cell (Ctrl+Enter)';
-    actions.append(view.runBtn);
   } else {
     const toggle = button('Edit', () => {
       cell.mdEditing = !cell.mdEditing;
@@ -943,7 +877,7 @@ function codePlaceholder(): string {
   const first = state.registered[0];
   if (!first) return 'Python — or add a spreadsheet above to work with your own data';
   const name = state.engine?.pandas === false ? `tables["${first.name}"]` : `df_${first.name}.head()`;
-  return `Python — try Insert a step above, or ${name}`;
+  return `Python — try ${name}`;
 }
 
 /** Registering changes what the hint should say, so refresh the empty cells. */
@@ -965,6 +899,7 @@ function finishMarkdown(cell: UICell): void {
 function refreshGutter(cell: UICell): void {
   const view = cell.view!;
   view.gutter.innerHTML = '';
+  if (view.runBtn) view.gutter.append(view.runBtn);
   const label = cell.kind !== 'code' ? 'note' : cell.running ? '[*]' : `[${cell.execCount ?? ' '}]`;
   view.gutter.append(el('span', { class: 'nb-count' }, [label]));
   if (view.foldBtn) {
@@ -1167,10 +1102,7 @@ function formatElapsed(ms: number): string {
 /** The traceback, translated. The original is always one click away. */
 function errorEl(raw: string): HTMLElement {
   const columns = state.registered.flatMap((r) => r.sheet.headers);
-  const names = [
-    ...state.registered.map((r) => (state.engine?.pandas === false ? r.name : `df_${r.name}`)),
-    ...state.variables.map((v) => v.name),
-  ];
+  const names = state.registered.map((r) => (state.engine?.pandas === false ? r.name : `df_${r.name}`));
   const ex = explainPythonError(raw, { columns, names });
 
   const head = el('div', { class: 'nb-err-title' }, [ex.title]);
@@ -1252,7 +1184,6 @@ async function runOne(cell: UICell, then: 'stay' | 'advance' | 'insert'): Promis
   refreshOutput(cell);
   setEngineLabel();
   scheduleSave();
-  void refreshVariables();
 
   if (!res.ok) cell.view?.root.scrollIntoView({ block: 'nearest' });
   else if (then === 'insert') insertCell('code', cell);
@@ -1317,8 +1248,6 @@ async function stopEngine(): Promise<void> {
   try {
     state.engine = await pyMod.restartPython();
     await reregister();
-    state.variables = [];
-    if (state.rail === 'variables') renderRail();
     toast('Stopped. Your tables are still here; anything else in memory was cleared — use Run all to rebuild it.', 'success', 7000);
   } catch (e) {
     toast(`Could not restart Python: ${msg(e)}`, 'error', 8000);
@@ -1326,163 +1255,12 @@ async function stopEngine(): Promise<void> {
   setEngineLabel();
 }
 
-// ---- recipes ----------------------------------------------------------------
-
-function recipeContext(): Parameters<typeof snippetsFor>[0] {
-  return {
-    pandas: state.engine?.pandas !== false,
-    charts: state.engine?.charts !== false,
-    tables: state.registered.map((r) => ({
-      name: r.name,
-      // Distinct counts let the recipe picker prefer a column worth grouping on
-      // rather than the first text column, which is often a reference.
-      columns: r.sheet.headers.map((h, i) => {
-        const p = profileColumn(r.sheet, i);
-        return { name: h, kind: p.kind, distinct: p.distinct };
-      }),
-    })),
-  };
-}
-
-function toggleRecipes(): void {
-  const host = q('#recipes');
-  if (!host.hidden) {
-    host.hidden = true;
-    return;
-  }
-  renderRecipes(host, false);
-  host.hidden = false;
-}
-
-function renderRecipes(host: HTMLElement, inline: boolean): void {
-  host.innerHTML = '';
-  const list = snippetsFor(recipeContext());
-  if (!list.length) {
-    host.append(
-      el('div', { class: 'nb-recipes-empty' }, [
-        'Add a spreadsheet above and select Register — the steps here are written using your own column names.',
-      ]),
-    );
-    return;
-  }
-
-  host.append(
-    el('div', { class: 'nb-recipes-head' }, [
-      el('strong', {}, [inline ? 'Start with a common step' : 'Insert a step']),
-      el('span', {}, ['Each one inserts working code using your columns. Change it afterwards — nothing is locked.']),
-    ]),
-  );
-
-  const groups = new Map<string, Snippet[]>();
-  for (const s of list) groups.set(s.group, [...(groups.get(s.group) ?? []), s]);
-
-  for (const [group, items] of groups) {
-    host.append(el('div', { class: 'nb-recipe-group' }, [group]));
-    const grid = el('div', { class: 'nb-recipe-grid' });
-    for (const s of items) grid.append(recipeCard(s));
-    host.append(grid);
-  }
-}
-
 /**
- * One recipe, with its column choices inline: "Total [PrimaryAmount ▾] by
- * [Status ▾]". Changing a dropdown is the thing users want to do next, and it
- * has to be possible without editing Python.
- */
-function recipeCard(s: Snippet): HTMLElement {
-  const ctx = recipeContext();
-  const values = defaultValues(s);
-  const selects = new Map<string, HTMLSelectElement>();
-
-  const makeSelect = (p: (typeof s.params)[number]): HTMLSelectElement => {
-    const sel = el('select', { class: 'recipe-pick', 'aria-label': p.label }) as HTMLSelectElement;
-    fillSelect(sel, p, values, ctx);
-    sel.addEventListener('change', () => {
-      values[p.id] = sel.value;
-      // Changing the table changes which columns exist, so re-offer them.
-      if (p.kind === 'table') {
-        for (const other of s.params) {
-          if (other.kind !== 'column' || (other.from ?? 'table') !== p.id) continue;
-          const dependent = selects.get(other.id);
-          if (dependent) {
-            fillSelect(dependent, other, values, recipeContext());
-            values[other.id] = dependent.value;
-          }
-        }
-      }
-    });
-    selects.set(p.id, sel);
-    return sel;
-  };
-
-  // Split the template so the dropdowns sit inside the sentence.
-  const title = el('span', { class: 'nb-recipe-label' });
-  for (const part of s.template.split(/(\{\w+\})/)) {
-    const match = part.match(/^\{(\w+)\}$/);
-    const param = match && s.params.find((p) => p.id === match[1]);
-    if (param) title.append(makeSelect(param));
-    else if (part) title.append(document.createTextNode(part));
-  }
-
-  const insert = button('Insert', () => useRecipe(s, { ...values }), 'btn recipe-insert');
-  insert.title = 'Add this step to the notebook and run it';
-
-  return el('div', { class: 'nb-recipe' }, [
-    title,
-    el('span', { class: 'nb-recipe-blurb' }, [s.blurb]),
-    insert,
-  ]);
-}
-
-function fillSelect(
-  sel: HTMLSelectElement,
-  p: { id: string; kind: 'table' | 'column'; kinds?: ColumnKind[]; from?: string; default: string },
-  values: Record<string, string>,
-  ctx: ReturnType<typeof recipeContext>,
-): void {
-  sel.innerHTML = '';
-  const options =
-    p.kind === 'table'
-      ? ctx.tables.map((t) => t.name)
-      : columnChoices(ctx, values[p.from ?? 'table'] ?? ctx.tables[0]?.name ?? '', p.kinds).map((c) => c.name);
-  for (const name of options) sel.append(el('option', { value: name }, [name]));
-  const wanted = options.includes(values[p.id]) ? values[p.id] : (options.includes(p.default) ? p.default : options[0]);
-  sel.value = wanted ?? '';
-  // A single choice is not a choice — show it as plain text.
-  sel.classList.toggle('is-fixed', options.length < 2);
-}
-
-/** Put a recipe into the first empty cell, or a new one after the last cell. */
-function useRecipe(s: Snippet, values: Record<string, string>): void {
-  q('#recipes').hidden = true;
-  const code = s.build(values, recipeContext());
-  const empty = state.cells.find((c) => c.kind === 'code' && !c.source.trim());
-  const cell = empty ?? insertCell('code');
-  cell.source = code;
-  cell.view?.editor?.setValue(code);
-  cell.view?.editor?.focus();
-  cell.view?.root.scrollIntoView({ block: 'nearest' });
-  updateEmptyState();
-  scheduleSave();
-  void runOne(cell, 'stay');
-}
-
-/**
- * The first thing a new user sees. An empty notebook shows the recipe list
- * inline rather than a blank box, so there is always something to click.
+ * An empty notebook needs no scaffolding beyond the cell itself — the column
+ * list in the data panel is the reference, and clicking a column inserts it.
  */
 function updateEmptyState(): void {
-  const host = q('#nb');
-  const blank = state.cells.length === 1 && !state.cells[0].source.trim() && state.cells[0].kind === 'code';
-  const existing = host.querySelector('.nb-start');
-  if (!blank || !state.registered.length) {
-    existing?.remove();
-    return;
-  }
-  if (existing) return;
-  const start = el('div', { class: 'nb-recipes nb-start' });
-  renderRecipes(start, true);
-  host.prepend(start);
+  q('#nb').querySelector('.nb-start')?.remove();
 }
 
 // ---- save, open, autosave ---------------------------------------------------

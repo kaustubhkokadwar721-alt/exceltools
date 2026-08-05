@@ -59,7 +59,7 @@ export function profileColumn(sheet: SheetData, index: number): ColumnProfile {
 export function describeColumn(p: ColumnProfile): string {
   const parts = [p.kind as string];
   if (p.blanks > 0) parts.push(`${p.blanks.toLocaleString()} blank`);
-  else if (p.distinct !== null && p.distinct > 0 && p.distinct < p.rows) parts.push(`${p.distinct} distinct`);
+  else if (p.distinct !== null && p.distinct > 0 && p.distinct < p.rows) parts.push(`${p.distinct} unique`);
   return parts.join(' · ');
 }
 

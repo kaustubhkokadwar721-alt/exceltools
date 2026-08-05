@@ -11,18 +11,29 @@ export interface DropzoneOptions {
   onWarning?: (message: string) => void;
 }
 
+/**
+ * A single top row rather than a large empty box: the action sits on the left
+ * where reading starts, and the promise that matters to the user — that the file
+ * never leaves the machine — is stated on the right, large enough to be read
+ * rather than skipped. The whole row is still the drop target.
+ */
 export function createDropzone(opts: DropzoneOptions): HTMLElement {
   const accept = SUPPORTED_EXTENSIONS.map((e) => `.${e}`).join(',');
+  const label = `Add ${opts.multiple ? 'files' : 'a file'}`;
   const el = document.createElement('div');
   el.className = 'dropzone';
   el.tabIndex = 0;
   el.setAttribute('role', 'button');
-  el.setAttribute('aria-label', `Add ${opts.multiple ? 'files' : 'a file'} — drop here or choose from this device`);
+  el.setAttribute('aria-label', `${label} — drop here or choose from this device`);
   el.innerHTML = `
-    <span class="dropzone-icon" aria-hidden="true">${icon('upload')}</span>
-    <span class="dropzone-title">Add ${opts.multiple ? 'files' : 'a file'}</span>
-    <span class="dropzone-sub">Drop here or choose from this device — ${SUPPORTED_EXTENSIONS.join(', ')}</span>
-    <span class="dropzone-privacy">Files stay on this device. Nothing is uploaded.</span>`;
+    <span class="dropzone-action">
+      <span class="dropzone-icon" aria-hidden="true">${icon('upload')}</span>
+      <span class="dropzone-text">
+        <span class="dropzone-title">${label}</span>
+        <span class="dropzone-sub">Drop here, or click to choose</span>
+      </span>
+    </span>
+    <span class="dropzone-privacy">Files stay on this device. Nothing is uploaded to cloud.</span>`;
 
   const handle = (files: File[]) => {
     if (!files.length) return;

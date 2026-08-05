@@ -50,8 +50,8 @@ describe('describeColumn', () => {
     expect(describeColumn({ kind: 'number', blanks: 4, distinct: 20, rows: 24 })).toBe('number · 4 blank');
   });
 
-  it('falls back to distinct when nothing is missing', () => {
-    expect(describeColumn({ kind: 'text', blanks: 0, distinct: 3, rows: 24 })).toBe('text · 3 distinct');
+  it('falls back to the count of different values when nothing is missing', () => {
+    expect(describeColumn({ kind: 'text', blanks: 0, distinct: 3, rows: 24 })).toBe('text · 3 unique');
   });
 
   it('says nothing extra about a column that is all distinct or uncounted', () => {

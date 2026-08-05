@@ -179,12 +179,12 @@ Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
 
 ## Quality
 
-- **111 unit tests** (Vitest) over the pure modules — transform, validation, zip,
+- **171 unit tests** (Vitest) over the pure modules — transform, validation, zip,
   tables, source, plus the notebook's `.ipynb` round-trip (results included),
-  error translation, recipe generation, draft storage and syntax highlighting —
-  and **41 E2E tests** (Playwright): one per tool, Excel-Table import, staged
-  rename + schema, a **no-external-requests privacy guard**, and the notebook's
-  save/reopen, recovery, recipes and plain-English errors.
+  error translation, draft storage and syntax highlighting — and **47 E2E tests**
+  (Playwright): one per tool, Excel-Table import, staged rename + schema, a
+  **no-external-requests privacy guard**, and the notebook's save/reopen,
+  recovery and plain-English errors.
 - CI (`.github/workflows/test.yml`) runs typecheck + unit + E2E on every PR and
   push to `main`; deploys only happen from `main`.
 - Measured performance limits (soft warn 25 MB, hard cap 100 MB) —
