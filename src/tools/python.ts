@@ -875,9 +875,9 @@ function fillBody(cell: UICell): void {
 
 function codePlaceholder(): string {
   const first = state.registered[0];
-  if (!first) return 'Python — or add a spreadsheet above to work with your own data';
+  if (!first) return 'Write Python here — or add a spreadsheet to work with your own data';
   const name = state.engine?.pandas === false ? `tables["${first.name}"]` : `df_${first.name}.head()`;
-  return `Python — try ${name}`;
+  return `Write Python here — try ${name}`;
 }
 
 /** Registering changes what the hint should say, so refresh the empty cells. */

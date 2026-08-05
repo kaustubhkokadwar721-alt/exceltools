@@ -408,8 +408,10 @@ html, body { overflow: hidden; }
 .nb-cell.is-running { border-left-color: var(--rgy-gold); background: color-mix(in srgb, var(--rgy-gold) 4%, var(--rgy-panel)); }
 .nb-markdown { border-left-color: color-mix(in srgb, var(--rgy-gold) 55%, var(--rgy-rule)); }
 /* One row, not a stack: run, counter and fold sit beside each other so the
-   gutter is never taller than the line of code it sits next to. */
-.nb-gutter { padding-top: 3px; display: flex; align-items: center; gap: 1px; }
+   gutter is never taller than the line of code it sits next to. The row is as
+   tall as one line of the editor and centres inside it, so the controls line up
+   with the first line of code however long the cell grows. */
+.nb-gutter { min-height: 36px; display: flex; align-items: center; gap: 1px; }
 /* The one control used on every cell, so it never hides behind a hover. */
 .nb-run { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: 50%; background: none; font-size: 12px; line-height: 1; color: var(--rgy-ink-faint); cursor: pointer; }
 .nb-run:hover:not([disabled]) { border-color: var(--rgy-green); color: var(--rgy-green); background: var(--rgy-inset); }
@@ -465,7 +467,9 @@ html, body { overflow: hidden; }
   white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
 }
 .ce-hl { position: absolute; inset: 0; overflow: hidden; pointer-events: none; background: var(--rgy-inset); border-color: var(--rgy-input); color: var(--rgy-ink); }
-.ce-input { position: relative; background: transparent; border-color: var(--rgy-input); color: transparent; caret-color: var(--rgy-ink); resize: none; overflow: hidden; }
+/* display:block matters: as an inline element the textarea carries a baseline
+   descender gap under it, which padded every cell with 6px of dead space. */
+.ce-input { display: block; position: relative; background: transparent; border-color: var(--rgy-input); color: transparent; caret-color: var(--rgy-ink); resize: none; overflow: hidden; }
 .ce-input::placeholder { color: var(--rgy-ink-faint); }
 .ce-input:focus { outline: none; border-color: var(--rgy-green); }
 .ce-input:focus + .ce-hl, .ce:focus-within .ce-hl { border-color: var(--rgy-green); }
