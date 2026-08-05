@@ -401,13 +401,15 @@ html, body { overflow: hidden; }
 /* Cells — a left stripe carries run state, so scanning a long notebook shows
    at a glance what ran, what is running, and what broke. */
 .nb-cells { display: flex; flex-direction: column; gap: 10px; }
-.nb-cell { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; align-items: start; border: 1px solid var(--rgy-rule); border-left: 3px solid var(--rgy-rule); border-radius: var(--rgy-radius); background: var(--rgy-panel); padding: 8px; transition: border-color .15s var(--rgy-ease); }
+.nb-cell { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 6px; align-items: start; border: 1px solid var(--rgy-rule); border-left: 3px solid var(--rgy-rule); border-radius: var(--rgy-radius); background: var(--rgy-panel); padding: 8px; transition: border-color .15s var(--rgy-ease); }
 .nb-cell:focus-within { border-color: var(--rgy-green); }
 .nb-cell.is-ok { border-left-color: var(--rgy-green); }
 .nb-cell.is-error { border-left-color: var(--rgy-red); }
 .nb-cell.is-running { border-left-color: var(--rgy-gold); background: color-mix(in srgb, var(--rgy-gold) 4%, var(--rgy-panel)); }
 .nb-markdown { border-left-color: color-mix(in srgb, var(--rgy-gold) 55%, var(--rgy-rule)); }
-.nb-gutter { padding-top: 4px; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+/* One row, not a stack: run, counter and fold sit beside each other so the
+   gutter is never taller than the line of code it sits next to. */
+.nb-gutter { padding-top: 3px; display: flex; align-items: center; gap: 1px; }
 /* The one control used on every cell, so it never hides behind a hover. */
 .nb-run { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: 50%; background: none; font-size: 12px; line-height: 1; color: var(--rgy-ink-faint); cursor: pointer; }
 .nb-run:hover:not([disabled]) { border-color: var(--rgy-green); color: var(--rgy-green); background: var(--rgy-inset); }
@@ -420,7 +422,7 @@ html, body { overflow: hidden; }
 /* Add a step where you are, not only at the end. Hidden until the cell is
    hovered or focused so a long notebook stays quiet. */
 .nb-cell { position: relative; }
-.nb-insert { position: absolute; left: 40px; bottom: -12px; z-index: 2; display: flex; gap: 4px; opacity: 0; transition: opacity .12s var(--rgy-ease); }
+.nb-insert { position: absolute; left: 74px; bottom: -12px; z-index: 2; display: flex; gap: 4px; opacity: 0; transition: opacity .12s var(--rgy-ease); }
 .nb-cell:hover .nb-insert, .nb-cell:focus-within .nb-insert, .nb-insert:focus-within { opacity: 1; }
 .nb-cell:hover .nb-actions, .nb-cell:focus-within .nb-actions, .nb-actions:focus-within { opacity: 1; }
 .nb-insert-btn { padding: 2px 10px; border: 1px solid var(--rgy-rule); border-radius: 999px; background: var(--rgy-panel); font: 500 12.5px var(--rgy-font-body); color: var(--rgy-ink-faint); cursor: pointer; box-shadow: var(--rgy-shadow-sm); }
