@@ -28,6 +28,9 @@ import type { SheetData, TableDef, ColType, CellValue } from '../core/types';
 import type { CellResult, EngineInfo } from '../core/python';
 
 const PREVIEW_ROWS = 2000;
+// Enough rows for an assistant to see how dates, amounts and codes are written,
+// few enough that a careless paste is not a data dump.
+const AI_SAMPLE_ROWS = 5;
 const AUTOSAVE_MS = 800;
 
 interface Registered {
@@ -397,18 +400,33 @@ function renderRail(): void {
     return;
   }
 
-  const copyBtn = button('Copy for AI assistant', async () => {
-    const text = schemaTextForAI(state.registered, state.engine ?? { pandas: true, charts: true });
+  // Two buttons rather than one with a tick-box: the second puts real cell
+  // values from the file on the clipboard, and that is a decision the user
+  // should make by choosing it, not by leaving a checkbox as they found it.
+  const copy = async (sampleRows: number, note: string): Promise<void> => {
+    const text = schemaTextForAI(state.registered, state.engine ?? { pandas: true, charts: true }, sampleRows);
     try {
       await navigator.clipboard.writeText(text);
-      toast('Copied. Paste it into your AI assistant, add what you want in plain English, then paste the code back here.', 'success', 6000);
+      toast(note, 'success', 7000);
     } catch {
-      const ta = el('textarea', { class: 'sql-editor', rows: '10', 'aria-label': 'Schema to copy' }) as HTMLTextAreaElement;
+      const ta = el('textarea', { class: 'sql-editor', rows: '10', 'aria-label': 'Text to copy' }) as HTMLTextAreaElement;
       ta.value = text;
       host.append(ta);
       ta.select();
     }
-  }, 'btn-ghost');
+  };
+
+  const copyBtn = button('Copy for AI assistant', () => void copy(
+    0,
+    'Copied: your column names and types, no data. Paste it into your AI assistant, add what you want in plain English, then paste the code back here.',
+  ), 'btn-ghost');
+  copyBtn.title = 'Table names, column names and column types only — no cell values leave this panel';
+
+  const copyRowsBtn = button(`Copy with first ${AI_SAMPLE_ROWS} rows`, () => void copy(
+    AI_SAMPLE_ROWS,
+    `Copied, including the first ${AI_SAMPLE_ROWS} rows of each table — real data from your file. Check what you are pasting if the assistant is outside your firm.`,
+  ), 'btn-ghost');
+  copyRowsBtn.title = `Adds the first ${AI_SAMPLE_ROWS} rows of each table, so the assistant can see how dates, amounts and codes are actually written`;
 
   host.append(
     // The panel is already headed "Your data"; this says the one thing the
@@ -417,7 +435,7 @@ function renderRail(): void {
       el('div', { class: 'panel-hint' }, [
         state.engine?.pandas === false ? 'Use tables["name"] in code' : 'Use df_<name> in code',
       ]),
-      copyBtn,
+      el('div', { class: 'schema-copy' }, [copyBtn, copyRowsBtn]),
     ]),
   );
 

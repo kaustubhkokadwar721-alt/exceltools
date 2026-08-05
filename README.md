@@ -7,7 +7,7 @@ PWA. Built for accountants and finance teams, not engineers.
 
 > **Status:** Phases 0–4 complete; Phase 5 hardening mostly done (tests, CI,
 > security, performance, fidelity — only the real-PC pilot remains). Nine tools
-> live, plus native Excel Table import. 111 unit + 41 E2E tests in CI.
+> live, plus native Excel Table import. 178 unit + 49 E2E tests in CI.
 > See [`docs/`](docs/).
 
 ## Live app
@@ -56,20 +56,24 @@ fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 3. **Copy schema for AI** copies a plain-text schema preamble. Paste it into any
    AI assistant with a request in plain English ("give me department totals"),
    paste the SQL it writes back into the editor, and run.
+4. **Copy with first 5 rows** is the same preamble plus a sample of each table.
+   Types alone don't say that a date arrives as `31-03-2025` or an amount as
+   text with a currency prefix — the rows do, and that is what the generated
+   code otherwise trips over. It is a **separate button, not a default**,
+   because it puts real cell values on the clipboard. Both buttons appear in
+   Query and in the Python notebook.
 
 ### Python notebook, for people who don't write Python
 
 The engine is Pyodide; the work went into the parts that decide whether an
 accountant can actually use it.
 
-- **Nothing to type to start.** An empty notebook shows a list of tasks —
-  *total by category*, *rows missing from another table*, *duplicates*, *a bar
-  chart* — and each one inserts working code **written with your own column
-  names**, then runs it. Edit it afterwards; nothing is locked.
-- **The tasks are adjustable, not fixed.** Each one reads as a sentence with
-  its columns as dropdowns — *Total ⌄PrimaryAmount by ⌄Status* — so wanting it
-  *by Entity instead* is a dropdown, not a Python edit. With several files
-  loaded you can point a step at a different table the same way.
+- **You don't have to know the Python.** **Copy for AI assistant** puts every
+  table, column and type on the clipboard as plain text; describe what you want
+  in English to whichever assistant your firm allows, and paste the code back
+  into a cell. **Copy with first 5 rows** adds a sample of the data, so the
+  assistant can see that a date arrives as `31-03-2025` — a separate button,
+  because that one carries real values.
 - **Errors in English.** A failed cell says *"There is no column called
   'Amout'. Did you mean 'Amount'?"* — the traceback is folded away behind
   *Technical details*. Around twenty of the failures that actually happen
@@ -179,9 +183,9 @@ Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
 
 ## Quality
 
-- **171 unit tests** (Vitest) over the pure modules — transform, validation, zip,
+- **178 unit tests** (Vitest) over the pure modules — transform, validation, zip,
   tables, source, plus the notebook's `.ipynb` round-trip (results included),
-  error translation, draft storage and syntax highlighting — and **47 E2E tests**
+  error translation, draft storage and syntax highlighting — and **49 E2E tests**
   (Playwright): one per tool, Excel-Table import, staged rename + schema, a
   **no-external-requests privacy guard**, and the notebook's save/reopen,
   recovery and plain-English errors.

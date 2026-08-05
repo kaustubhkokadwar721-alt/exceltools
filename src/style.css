@@ -334,6 +334,11 @@ html, body { overflow: hidden; }
 .schema-head { display: flex; align-items: center; gap: 14px; justify-content: space-between; flex-wrap: wrap; }
 .schema-head .file-list-head { margin: 16px 0 8px; }
 .schema-head .btn-ghost { min-height: 34px; padding: 6px 14px; }
+/* Two ways to hand the data over; in a narrow panel they stack rather than
+   shrink, because which one you picked matters more than saving a row. */
+.schema-copy { display: flex; flex-wrap: wrap; gap: 6px; }
+.panel-body .schema-copy { flex-direction: column; align-items: stretch; width: 100%; }
+.panel-body .schema-copy .btn-ghost { min-height: 32px; padding: 5px 10px; font-size: 13.5px; }
 .schema-detail { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .schema-block { border: 1px solid var(--rgy-rule); border-radius: var(--rgy-radius-sm); background: var(--rgy-panel); }
 .schema-block > summary { padding: 8px 13px; cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 4px; }

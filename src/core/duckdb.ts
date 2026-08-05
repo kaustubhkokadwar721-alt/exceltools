@@ -165,20 +165,63 @@ export async function describeTables(): Promise<TableSchema[]> {
 }
 
 /**
+ * The first few rows of every table, keyed by table name. Real cell values, so
+ * only ever fetched when the user explicitly asks to include them.
+ */
+export async function sampleRows(tables: string[], limit: number): Promise<Map<string, CellValue[][]>> {
+  const db = await getDB();
+  const conn = await db.connect();
+  const out = new Map<string, CellValue[][]>();
+  try {
+    for (const t of tables) {
+      const res = await conn.query(`SELECT * FROM "${esc(t)}" LIMIT ${Math.max(1, Math.floor(limit))}`);
+      const headers = res.schema.fields.map((f) => f.name);
+      out.set(t, res.toArray().map((row) => headers.map((h) => normalize((row as Record<string, unknown>)[h]))));
+    }
+  } finally {
+    await conn.close();
+  }
+  return out;
+}
+
+/**
  * Plain-text schema for handing to an AI assistant — written so a non-engineer
  * can paste it plus a request and get working SQL back.
+ *
+ * `samples` adds the first rows of each table under its columns. Types alone do
+ * not say that a date arrives as "31-03-2025" or an amount as text with a
+ * currency prefix, and that is exactly what the generated SQL trips over.
  */
-export function schemaText(schemas: TableSchema[]): string {
+export function schemaText(schemas: TableSchema[], samples?: Map<string, CellValue[][]>): string {
   const lines: string[] = [
     'I have these tables in a SQL database (DuckDB syntax). Please write SQL for my request using exactly these table and column names:',
     '',
   ];
+  if (samples?.size) {
+    lines.push(
+      'Sample rows are shown under each table so you can see how the values are actually written. They are a preview only — write SQL against the whole table, not these rows.',
+      '',
+    );
+  }
   for (const s of schemas) {
     lines.push(`Table "${s.table}" (${s.rows.toLocaleString()} rows):`);
     for (const c of s.columns) lines.push(`  - "${c.name}" ${c.type}`);
+    const rows = samples?.get(s.table);
+    if (rows?.length) {
+      lines.push(`  First ${rows.length} row${rows.length === 1 ? '' : 's'}:`);
+      lines.push(`    ${s.columns.map((c) => c.name).join(' | ')}`);
+      for (const r of rows) lines.push(`    ${r.map(sampleCell).join(' | ')}`);
+    }
     lines.push('');
   }
   return lines.join('\n').trimEnd() + '\n';
+}
+
+/** Long free text is cut: an assistant needs the shape of a value, not an essay. */
+function sampleCell(v: CellValue): string {
+  if (v === null || v === undefined || v === '') return '';
+  const s = String(v);
+  return s.length > 60 ? `${s.slice(0, 57)}…` : s;
 }
 
 /** Drop every user table — used when a tool reloads a fresh set of files. */

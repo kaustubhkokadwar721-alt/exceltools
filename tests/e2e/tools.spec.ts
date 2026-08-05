@@ -207,6 +207,33 @@ test('Query: rename a staged sheet and read the schema panel', async ({ page }) 
   expect(rows[0][1]).toBe('30');
 });
 
+test('Query: the schema hands over to an AI assistant, with or without the data', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/#/tool/query');
+  await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);
+  await page.waitForSelector('.sheet-stage-row input.col-name', { timeout: 60_000 });
+  await page.click('button:has-text("Register")');
+  await page.waitForSelector('.schema-block', { timeout: 60_000 });
+  const clip = () => page.evaluate(() => navigator.clipboard.readText());
+
+  // The default describes the tables and carries none of their contents.
+  await page.click('button:has-text("Copy schema for AI")');
+  const schema = await clip();
+  expect(schema).toContain('Table "staff"');
+  expect(schema).toMatch(/"Amt" (BIGINT|DOUBLE)/);
+  expect(schema).not.toContain('Fin');
+
+  // The second button is a separate, deliberate choice, and says what it did.
+  await page.click('button:has-text("Copy with first 5 rows")');
+  await expect(page.locator('.toast').last()).toContainText('real data from your file');
+  const withRows = await clip();
+  expect(withRows).toContain('First 5 rows:');
+  expect(withRows).toContain('ID | Dept | Amt');
+  expect(withRows).toContain('Fin');
+  // A preview, not the table: 30 rows in, 5 out.
+  expect(withRows.split('\n').filter((l) => /^ {4}\d+ \| /.test(l))).toHaveLength(5);
+});
+
 test('Pivot: group-by aggregate on DuckDB', async ({ page }) => {
   await page.goto('/#/tool/pivot');
   await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);

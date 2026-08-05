@@ -209,6 +209,20 @@ space, and it does not pretend to be a query builder. The heuristics the recipes
 relied on (never total an identifier, never total a date) live on in the column
 profiles that handoff text carries.
 
+A schema is not always enough. An assistant told a column is `VARCHAR` will
+write code that breaks on `31-03-2025`, on `1,200.50`, on `₹ 1200` — the format
+is invisible in the type. So there is a second button, **Copy with first 5
+rows**, which adds a sample of each table under its columns.
+
+It is deliberately a *separate button* rather than a checkbox on the first one.
+The default copy contains no cell values at all; the sample copy contains real
+client data, and the difference has to be a choice the user makes by clicking,
+not a setting they might leave as they found it. The toast says so in plain
+words, five rows is a preview rather than a dump, and long free-text cells are
+truncated at 60 characters. Nothing is transmitted either way — this is the
+system clipboard, and where it goes next is the user's decision, which is
+exactly why the two options are labelled for what they carry.
+
 Sorting was built alongside the recipes and stays. Clicking a result's column header sorts it —
 ascending, descending, then back to the file's own order — with blanks pinned
 last in both directions, because a missing figure is not a small one, and ties
