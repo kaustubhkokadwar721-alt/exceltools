@@ -88,7 +88,7 @@ test('Convert: the data panel profiles the file it opened', async ({ page }) => 
 
   await expect(page.locator('#datapanel .panel-file')).toHaveText('returns.xlsx');
   await expect(page.locator('#datapanel .schema-col')).toHaveCount(3);
-  await expect(page.locator('#datapanel .schema-col').nth(1)).toContainText('2 distinct');
+  await expect(page.locator('#datapanel .schema-col').nth(1)).toContainText('2 unique');
   // The blank count is the reason the panel exists; it must be visible and
   // distinguishable, not just present in the DOM.
   const blanks = page.locator('#datapanel .schema-col-type.has-blanks');

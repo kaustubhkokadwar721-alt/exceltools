@@ -9,21 +9,6 @@ const STAFF = xlsxBase64([
   ...Array.from({ length: 30 }, (_, i) => [i + 1, ['Fin', 'Ops', 'IT'][(i + 1) % 3], (i + 1) * 10] as (string | number)[]),
 ]);
 
-// Two genuinely numeric columns and two category columns, so a recipe has
-// something to be re-pointed *at*. STAFF cannot serve: its "ID" is a reference,
-// which type detection now reads as text, so it is correctly not offered as a
-// column to total.
-const LEDGER = xlsxBase64([
-  ['Ref', 'Dept', 'Region', 'Amt', 'Tax'],
-  ...Array.from({ length: 30 }, (_, i) => [
-    `R-${i + 1}`,
-    ['Fin', 'Ops', 'IT'][(i + 1) % 3],
-    ['East', 'West'][(i + 1) % 2],
-    (i + 1) * 10,
-    (i + 1) * 2,
-  ] as (string | number)[]),
-]);
-
 const pyDir = join(process.cwd(), 'public', 'pyodide');
 const staged = (prefix: string) => existsSync(pyDir) && readdirSync(pyDir).some((f) => f.startsWith(prefix));
 const pandasStaged = staged('pandas-');
@@ -49,11 +34,11 @@ async function setCell(page: Page, idx: number, code: string): Promise<void> {
  * which races the SPA: a click can land on a page that is about to be replaced.
  * Waiting for the destination's own UI makes the remount the assertion.
  */
-async function gotoTool(page: Page, id: 'python' | 'convert'): Promise<void> {
+async function gotoTool(page: Page, id: 'python' | 'convert', ready?: string): Promise<void> {
   await page.evaluate((tool) => {
     location.hash = `#/tool/${tool}`;
   }, id);
-  await page.waitForSelector(id === 'python' ? '.nb-toolbar' : '.dropzone', { state: 'visible' });
+  await page.waitForSelector(ready ?? (id === 'python' ? '.nb-toolbar' : '.dropzone'), { state: 'visible' });
 }
 
 /** Result grids group digits in the viewer's locale, which CI need not share. */
@@ -110,59 +95,6 @@ test('notebook: a missing column names the column and suggests the right one', a
   await page.waitForSelector('.nb-err-title', { timeout: 90_000 });
   await expect(page.locator('.nb-err-title')).toContainText('no column called "Amount"');
   await expect(page.locator('.nb-err-hint')).toContainText('Did you mean "Amt"?');
-});
-
-test('notebook: recipes insert runnable code using the real column names', async ({ page }) => {
-  test.setTimeout(240_000);
-  await bootNotebook(page);
-
-  // An empty notebook offers the recipe list up front — nothing to type.
-  await page.waitForSelector('.nb-start .nb-recipe');
-
-  if (pandasStaged) {
-    // "Amt" is pre-picked over the numeric "ID" — you total money, not row numbers.
-    const card = page.locator('.nb-recipe', { hasText: 'Total' }).first();
-    await expect(card.locator('.recipe-pick').first()).toHaveValue('Amt');
-    await card.locator('button:has-text("Insert")').click();
-    await expect(page.locator('.ce-input').first()).toHaveValue(/groupby\("Dept", as_index=False\)\["Amt"\]/);
-    await page.waitForSelector('.nb-out-host .grid-row', { timeout: 90_000 });
-    const rows = await gridRows(page, '.nb-out-host');
-    expect(rows.map((r) => [r[1], r[2]])).toEqual([
-      ['Fin', num(1650)],
-      ['IT', num(1550)],
-      ['Ops', num(1450)],
-    ]);
-  } else {
-    const card = page.locator('.nb-recipe', { hasText: 'See the first few rows' });
-    await card.locator('button:has-text("Insert")').click();
-    await expect(page.locator('.ce-input').first()).toHaveValue(/tables\["payroll"\]/);
-    await expect(page.locator('.nb-stdout').first()).toContainText('30 rows', { timeout: 90_000 });
-  }
-});
-
-test('notebook: a recipe can be re-pointed at other columns without editing Python', async ({ page }) => {
-  test.skip(!pandasStaged, 'pandas wheels not staged in this build');
-  test.setTimeout(240_000);
-  await page.goto('/#/tool/python');
-  await dropXlsx(page, '.dropzone', 'ledger.xlsx', LEDGER);
-  await page.waitForSelector('.sheet-stage-row input.col-name', { timeout: 60_000 });
-  await page.fill('.sheet-stage-row input.col-name', 'ledger');
-  await page.click('#setup button:has-text("Register")');
-  await page.waitForSelector('.schema-block', { timeout: 150_000 });
-  await page.waitForSelector('.nb-start .nb-recipe');
-
-  const card = page.locator('.nb-recipe', { hasText: 'Total' }).first();
-  const value = card.locator('.recipe-pick').nth(0);
-  const group = card.locator('.recipe-pick').nth(1);
-
-  // Which columns are on offer is pinned in tests/unit/snippets.test.ts, where
-  // it can be checked without depending on which wheels this build staged.
-  await value.selectOption('Tax');
-  await group.selectOption('Dept');
-  await card.locator('button:has-text("Insert")').click();
-
-  await expect(page.locator('.ce-input').first()).toHaveValue(/groupby\("Dept", as_index=False\)\["Tax"\]/);
-  await page.waitForSelector('.nb-out-host .grid-row', { timeout: 90_000 });
 });
 
 test('notebook: every table result in the notebook exports as one workbook', async ({ page }) => {
@@ -461,6 +393,9 @@ test('notebook: drafts can be switched off, which deletes the stored one', async
   await setCell(page, 0, 'secret = "client data"');
   await page.waitForFunction(() => !!localStorage.getItem('exceltools.notebook.draft.v1'));
 
+  // The setting lives behind "?" with the rest of the reference material, so
+  // the work surface carries only the controls you use while working.
+  await page.click('#helpbtn');
   await page.locator('.nb-draft input').uncheck();
   expect(await page.evaluate(() => localStorage.getItem('exceltools.notebook.draft.v1'))).toBeNull();
 
@@ -469,6 +404,7 @@ test('notebook: drafts can be switched off, which deletes the stored one', async
   await gotoTool(page, 'convert');
   await gotoTool(page, 'python');
   await expect(page.locator('.nb-restore')).toHaveCount(0);
+  await page.click('#helpbtn');
   await expect(page.locator('.nb-draft input')).not.toBeChecked();
   expect(await page.evaluate(() => localStorage.getItem('exceltools.notebook.draft.v1'))).toBeNull();
 });
@@ -478,7 +414,7 @@ test('notebook: onboarding chrome collapses once tables are registered', async (
   await page.goto('/#/tool/python');
   // Before: full drop area, and nothing loaded to show in the data panel.
   await expect(page.locator('.dropzone')).toBeVisible();
-  await expect(page.locator('#datapanel .rail-empty')).toContainText('No tables yet');
+  await expect(page.locator('#datapanel .rail-empty')).toContainText('Add a spreadsheet to get started');
 
   await bootNotebook(page);
 
@@ -494,7 +430,7 @@ test('notebook: onboarding chrome collapses once tables are registered', async (
   await expect(page.locator('#datapanel .schema-block')).toContainText('payroll');
   await expect(page.locator('#datapanel .schema-col')).toHaveCount(3);
   await expect(page.locator('#datapanel .schema-col').nth(1)).toContainText('Dept');
-  await expect(page.locator('#datapanel .schema-col').nth(1)).toContainText('3 distinct');
+  await expect(page.locator('#datapanel .schema-col').nth(1)).toContainText('3 unique');
 
   // And it is reversible — the drop area comes back on demand.
   await page.locator('.src-bar-add').click();

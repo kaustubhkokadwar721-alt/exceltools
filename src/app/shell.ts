@@ -291,6 +291,22 @@ function renderHelp(tool: ToolDef | null): void {
     ${note}`;
 }
 
+/**
+ * Put tool-specific content under the help text — settings and reference
+ * material that would otherwise sit on the work surface competing with the
+ * controls you actually use. Replaces whatever the tool put there last, so a
+ * tool that re-renders its toolbar does not stack copies in the popover.
+ */
+export function setHelpExtra(...nodes: Node[]): void {
+  const pop = shellRoot?.querySelector<HTMLElement>('#helppop');
+  if (!pop) return;
+  pop.querySelector('.help-extra')?.remove();
+  const box = document.createElement('div');
+  box.className = 'help-extra';
+  box.append(...nodes);
+  pop.append(box);
+}
+
 // ---- panel collapse ---------------------------------------------------------
 
 function wirePanelToggle(root: HTMLElement): void {

@@ -145,10 +145,10 @@ even have bought a working Stop button: reliable Pyodide interruption needs
 GitHub Pages nor a `file://` copy can set.
 
 So the notebook is ours, and the effort went where upstream Jupyter offers
-nothing: **plain-English error translation** (`src/core/pyerrors.ts`), a
-**recipe library** that writes each step using the user's own column names
-(`src/core/snippets.ts`), **crash recovery** (`src/core/nbstore.ts`), a
-**variable inspector**, and **outputs that survive a save** — tables as
+nothing: **plain-English error translation** (`src/core/pyerrors.ts`), **crash
+recovery** (`src/core/nbstore.ts`), a **schema handoff** that hands the whole
+data shape to an AI assistant in one click (`schemaTextForAI`), and **outputs
+that survive a save** — tables as
 `text/html` plus a lossless ExcelTools JSON mime, charts as `image/png`, so a
 reopened notebook shows its results without re-running, and still opens in real
 Jupyter. Stop is implemented honestly as *terminate the worker, boot a new one,
@@ -186,23 +186,30 @@ list of dicts, a list of equal-length rows, a dict of totals
 line of `repr`. Without pandas staged, that is the difference between a usable
 answer and an unreadable one.
 
-## Decision 14 — recipes are parameterised, not fixed
+## Decision 14 — the recipe library was removed; the schema handoff replaced it
 
-A fixed recipe list is a demo. The second thing anyone wants is the same step
-against a *different column* — "totals by entity, not status" — and if that
-costs a Python edit, the recipe list has only postponed the wall it exists to
-remove.
+The notebook shipped with a **recipe library** (`src/core/snippets.ts`): cards
+like `Total {value} by {group}` with the columns as inline dropdowns, which
+emitted runnable pandas using the user's own column names. It was
+parameterised rather than fixed, precisely so "totals by entity, not status"
+did not cost a Python edit.
 
-So a recipe (`src/core/snippets.ts`) declares its inputs rather than hard-coding
-them: a template like `Total {value} by {group}` plus typed params, and a
-`build(values)` that emits the code. The panel renders the template with the
-params as inline dropdowns, so the card reads as the sentence it produces and
-changing it is one click. Defaults still come from the heuristics (never total
-an identifier, never total a date), so an untouched card is still one click to a
-sensible step. With several files loaded, the table itself is a param — one
-recipe list covers every table instead of only the first.
+It is gone. Two reasons, both about the audience. First, it was a **second UI to
+learn** sitting on the work surface — a grid of cards, each with its own
+dropdowns, above the cells — for a tool whose whole premise is that the cell is
+where you work. Second, it could only ever cover the handful of steps we thought
+of; the moment a user wanted the eleventh, they were back at a blank cell with
+no more help than before.
 
-Sorting belongs to the same idea. Clicking a result's column header sorts it —
+**Copy for AI assistant** covers the same need without either limit. One click
+puts every table, column, type and profile into the clipboard as text; the user
+describes what they want in plain English to whichever assistant their firm
+already allows, and pastes the code back. It is unbounded, it costs no screen
+space, and it does not pretend to be a query builder. The heuristics the recipes
+relied on (never total an identifier, never total a date) live on in the column
+profiles that handoff text carries.
+
+Sorting was built alongside the recipes and stays. Clicking a result's column header sorts it —
 ascending, descending, then back to the file's own order — with blanks pinned
 last in both directions, because a missing figure is not a small one, and ties
 broken by original position so the order is stable. It lives in the shared grid
