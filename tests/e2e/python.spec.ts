@@ -566,6 +566,42 @@ test('grid: drag-resize and double-click autofit', async ({ page }) => {
   expect(Math.abs(a2 - b2)).toBeGreaterThan(10);
 });
 
+test('grid: the frame ends with the last column, not at the edge of the pane', async ({ page }) => {
+  // Two narrow columns in a wide pane: the rules and row shading used to run on
+  // across the empty space, which reads as a table with invisible columns.
+  const NARROW = xlsxBase64([['A', 'B'], ['1', '2'], ['3', '4']]);
+  await page.goto('/#/tool/convert');
+  await dropXlsx(page, '.dropzone', 'narrow.xlsx', NARROW);
+  await page.waitForSelector('.grid-row');
+
+  const grid = (await page.locator('.grid').first().boundingBox())!;
+  const host = (await page.locator('.grid-host').first().boundingBox())!;
+  expect(grid.width).toBeLessThan(host.width - 100);
+  // A row stops with the grid rather than spanning the pane behind it.
+  const row = (await page.locator('.grid-row').first().boundingBox())!;
+  expect(row.width).toBeLessThanOrEqual(grid.width);
+});
+
+test('notebook: the run controls ride down a cell taller than the screen', async ({ page }) => {
+  await page.goto('/#/tool/python');
+  await setCell(page, 0, Array.from({ length: 60 }, (_, i) => `line_${i} = ${i}`).join('\n'));
+
+  const gutterY = async () => (await page.locator('.nb-gutter').first().boundingBox())!.y;
+  const before = await gutterY();
+  await page.locator('.app-work').evaluate((el) => {
+    el.scrollTop = 700;
+  });
+  await expect.poll(gutterY).toBeLessThan(before);
+
+  // Still on screen, and clear of the toolbar that is pinned above it.
+  const toolbar = (await page.locator('.nb-toolbar').boundingBox())!;
+  const gutter = (await page.locator('.nb-gutter').first().boundingBox())!;
+  expect(gutter.y).toBeGreaterThanOrEqual(toolbar.y + toolbar.height - 1);
+  expect(gutter.y).toBeLessThan(300);
+  // The toolbar is pinned too — Stop has to be reachable from a long notebook.
+  expect(toolbar.y).toBeLessThan(120);
+});
+
 // ---- registration workflow -------------------------------------------------
 
 test('notebook: staging can be backed out of, and tables unticked', async ({ page }) => {

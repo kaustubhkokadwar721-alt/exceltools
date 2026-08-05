@@ -140,8 +140,12 @@ export function createDataGrid(sheet: SheetData, opts: DataGridOptions = {}): HT
     const t = template();
     const total = 48 + widths.reduce((a, b) => a + b, 0);
     header.style.gridTemplateColumns = t;
-    header.style.minWidth = `${total}px`;
-    spacer.style.minWidth = `${total}px`;
+    // width, not minWidth: a four-column result in a wide pane used to paint its
+    // rules and row shading right across the empty space to the pane's edge,
+    // which reads as a table with invisible columns. The grid is now exactly as
+    // wide as its columns, and still scrolls horizontally when they overflow.
+    header.style.width = `${total}px`;
+    spacer.style.width = `${total}px`;
     pool.querySelectorAll<HTMLElement>('.grid-row').forEach((r) => (r.style.gridTemplateColumns = t));
   };
 

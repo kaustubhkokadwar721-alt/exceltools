@@ -7,7 +7,7 @@ PWA. Built for accountants and finance teams, not engineers.
 
 > **Status:** Phases 0–4 complete; Phase 5 hardening mostly done (tests, CI,
 > security, performance, fidelity — only the real-PC pilot remains). Nine tools
-> live, plus native Excel Table import. 178 unit + 49 E2E tests in CI.
+> live, plus native Excel Table import. 178 unit + 51 E2E tests in CI.
 > See [`docs/`](docs/).
 
 ## Live app
@@ -185,7 +185,7 @@ Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
 
 - **178 unit tests** (Vitest) over the pure modules — transform, validation, zip,
   tables, source, plus the notebook's `.ipynb` round-trip (results included),
-  error translation, draft storage and syntax highlighting — and **49 E2E tests**
+  error translation, draft storage and syntax highlighting — and **51 E2E tests**
   (Playwright): one per tool, Excel-Table import, staged rename + schema, a
   **no-external-requests privacy guard**, and the notebook's save/reopen,
   recovery and plain-English errors.
