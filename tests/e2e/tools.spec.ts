@@ -33,7 +33,7 @@ async function readDownload(dl: import('@playwright/test').Download): Promise<Bu
 // anything. Regression guard — chrome creeps back one block at a time.
 test('every tool fits the screen on a 1366x768 laptop', async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 648 });
-  for (const id of ['', 'convert', 'merge', 'split', 'compare', 'clean', 'dedupe', 'query', 'pivot', 'python']) {
+  for (const id of ['', 'convert', 'pdf', 'merge', 'split', 'compare', 'clean', 'dedupe', 'query', 'pivot', 'python']) {
     await page.goto(id ? `/#/tool/${id}` : '/#/');
     await page.waitForSelector('.app-shell');
     const m = await page.evaluate(() => ({
@@ -52,7 +52,7 @@ test('the tool switcher lists every tool with its description', async ({ page })
   await expect(page.locator('#switchmenu')).toBeHidden();
   await page.click('#switch');
   const items = page.locator('#switchmenu .switch-item');
-  await expect(items).toHaveCount(9);
+  await expect(items).toHaveCount(10);
   await expect(page.locator('#switchmenu .switch-item[data-id="python"] .switch-blurb')).toContainText('pandas');
   await expect(page.locator('#switchmenu .switch-item.active')).toContainText('Convert');
   await page.keyboard.press('Escape');

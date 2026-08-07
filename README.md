@@ -36,6 +36,7 @@ fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 | Tool | What it does |
 |------|--------------|
 | **Convert** | A sheet **or a native Excel Table** → CSV / TSV / JSON / Markdown / HTML / XLSX |
+| **PDF tables** | Pull tables out of PDFs (bank statements, ERP prints, portal downloads) → merged into one sheet or one per table. Reads password-protected files; reports scanned pages instead of guessing at them |
 | **Merge** | Combine files — stack rows (aligned by column name) or keep each as a sheet |
 | **Split** | Break a sheet into many files → one `.zip`. Five modes: column value, row count, one file per sheet, a key derived from *part* of a value (text after a character, fixed-length prefix, or regex), or a custom value → file grouping |
 | **Compare** | Diff two sheets on a key column: added / removed / changed / unchanged |
