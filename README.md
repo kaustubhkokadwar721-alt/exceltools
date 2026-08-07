@@ -155,11 +155,12 @@ JupyterLab UI assumes a user who knows what a kernel is. Full reasoning in
 
 ## Architecture
 
-Two-tier engine strategy — match the engine to the tool:
+Match the engine to the tool — nothing heavy is paid for until it is used:
 
 | Tier | Tools | Engine | Loaded |
 |------|-------|--------|--------|
 | **Light** | convert, merge, split, clean, dedupe, compare | SheetJS (`xlsx`) | up front (small) |
+| **PDF** | pdf tables | pdf.js (`pdfjs-dist`), worker bundled same-origin | lazily on first use, then cached offline |
 | **SQL engine** | query, pivot | DuckDB-WASM | lazily on first use, then cached offline |
 | **Python engine** | python notebook | Pyodide (Python 3.14 + pandas + matplotlib) | lazily on first use, then cached offline |
 
