@@ -53,15 +53,18 @@ export const TOOLS: ToolDef[] = [
   {
     id: 'split',
     title: 'Split',
-    blurb: 'Split one sheet into many by rows or a column value.',
+    blurb: 'Split one sheet into many by rows, a column value, or your own grouping.',
     icon: '✂',
     tier: 'light',
     status: 'ready',
     help: [
       'Add a file and pick the sheet.',
-      "Split by a column's values (one file per value) or into fixed-size row chunks.",
+      "Split by a column's values (one file per value), fixed-size row chunks, or one file per sheet.",
+      'By part of a value keys on a piece of the cell — the text after a character, a fixed-length prefix, or a pattern — so INV-MH-0012 and INV-MH-0087 land in the same file.',
+      'Custom grouping lets you name the file each value goes to, collapsing many values into a few files.',
       'Select Split & download — you get a single .zip of the pieces.',
     ],
+    helpNote: 'Rows the rule cannot key are never dropped — they collect in (blank) or (unmatched), and the count is shown before you download.',
     mount: async (root) => (await import('../tools/split')).mountSplit(root),
   },
   {

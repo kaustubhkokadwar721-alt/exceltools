@@ -37,7 +37,7 @@ fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 |------|--------------|
 | **Convert** | A sheet **or a native Excel Table** → CSV / TSV / JSON / Markdown / HTML / XLSX |
 | **Merge** | Combine files — stack rows (aligned by column name) or keep each as a sheet |
-| **Split** | Split a sheet into many files by column value or row count → one `.zip` |
+| **Split** | Break a sheet into many files → one `.zip`. Five modes: column value, row count, one file per sheet, a key derived from *part* of a value (text after a character, fixed-length prefix, or regex), or a custom value → file grouping |
 | **Compare** | Diff two sheets on a key column: added / removed / changed / unchanged |
 | **Clean** | Trim, collapse spaces, fix case, numbers-from-text (Indian grouping, accounting negatives, ERP trailing minus, currency marks — unreadable figures are counted and shown), drop blank rows/cols |
 | **Dedupe** | Remove duplicate rows by chosen key columns, keeping first or last |

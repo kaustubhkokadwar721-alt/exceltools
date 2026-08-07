@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import * as XLSX from 'xlsx';
 import { unzipSync } from 'fflate';
 import { readFile } from 'node:fs/promises';
-import { xlsxBase64, dropXlsx, gridRows } from './helpers';
+import { xlsxBase64, xlsxSheets, dropXlsx, gridRows } from './helpers';
 
 const JAN = xlsxBase64([['ID', 'Name', 'Amount'], [1, 'Alice', 100], [2, 'Bob', 200]]);
 const FEB = xlsxBase64([['ID', 'Name', 'Amount'], [3, 'Carol', 300], [4, 'Dave', 400]]);
@@ -11,6 +11,17 @@ const CMP_A = xlsxBase64([['ID', 'Name', 'Salary'], [1, 'Alice', 100], [2, 'Bob'
 const CMP_B = xlsxBase64([['ID', 'Name', 'Salary'], [1, 'Alice', 100], [2, 'Bob', 250], [4, 'Dave', 400]]);
 const DUPES = xlsxBase64([['Invoice', 'Vendor'], ['INV-1', 'Acme'], ['INV-2', 'Beta'], ['INV-1', 'acme '], ['INV-1', 'ACME']]);
 const MESSY = xlsxBase64([['Name', 'Amount'], [' Alice ', '1,000'], ['bob', '2000']]);
+const TABS = xlsxSheets([
+  { name: 'Jan', aoa: [['ID', 'Amt'], [1, 100]] },
+  { name: 'Feb', aoa: [['ID', 'Amt'], [2, 200]] },
+  { name: 'Mar', aoa: [['ID', 'Amt'], [3, 300]] },
+]);
+const REFS = xlsxBase64([
+  ['Ref', 'Amt'],
+  ['INV-MH-0012', 10],
+  ['INV-MH-0087', 20],
+  ['INV-GJ-0041', 30],
+]);
 
 async function readDownload(dl: import('@playwright/test').Download): Promise<Buffer> {
   const path = await dl.path();
@@ -129,6 +140,65 @@ test('Split: by column value → zip of parts', async ({ page }) => {
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Split & download")')]);
   const files = Object.keys(unzipSync(new Uint8Array(await readDownload(dl))));
   expect(files.sort()).toEqual(['Fin.xlsx', 'IT.xlsx', 'Ops.xlsx']);
+});
+
+// The inverse of Merge's "separate sheets": a workbook in, one file per tab out.
+// The Sheet picker has to disappear here — leaving it on screen implies the
+// split honours it, and it does not.
+test('Split: by sheet → one file per tab, and the sheet picker steps aside', async ({ page }) => {
+  await page.goto('/#/tool/split');
+  await dropXlsx(page, '.dropzone', 'year.xlsx', TABS);
+  await page.waitForSelector('.config-bar');
+  await expect(page.locator('.config-bar .field').first()).toBeVisible();
+  await page.check('input[name="split-mode"][value="sheet"]');
+  await expect(page.locator('.config-bar .field').first()).toBeHidden();
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Split & download")')]);
+  const files = Object.keys(unzipSync(new Uint8Array(await readDownload(dl))));
+  expect(files.sort()).toEqual(['Feb.xlsx', 'Jan.xlsx', 'Mar.xlsx']);
+});
+
+// The whole point of a derived key: INV-MH-0012 and INV-MH-0087 are one file,
+// not two.
+test('Split: by part of a value keys on a piece of the cell', async ({ page }) => {
+  await page.goto('/#/tool/split');
+  await dropXlsx(page, '.dropzone', 'refs.xlsx', REFS);
+  await page.waitForSelector('.config-bar');
+  await page.check('input[name="split-mode"][value="derived"]');
+  await page.fill('.mode-host input[type="number"]', '2'); // keep the 2nd piece
+  await expect(page.locator('.sheet-meta')).toContainText('2 files');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Split & download")')]);
+  const files = Object.keys(unzipSync(new Uint8Array(await readDownload(dl))));
+  expect(files.sort()).toEqual(['GJ.xlsx', 'MH.xlsx']);
+});
+
+// Many values collapsing into few files, with the unnamed ones keeping their own.
+test('Split: custom grouping sends chosen values to a shared file', async ({ page }) => {
+  await page.goto('/#/tool/split');
+  await dropXlsx(page, '.dropzone', 'staff.xlsx', STAFF);
+  await page.waitForSelector('.config-bar');
+  await page.check('input[name="split-mode"][value="group"]');
+  await page.selectOption('.mode-host select >> nth=0', '1'); // Dept
+  await page.waitForSelector('.group-row');
+  // Values are listed commonest first, ties alphabetical: Fin, IT, Ops.
+  const boxes = page.locator('.group-row .field-input');
+  await boxes.nth(0).fill('Support');
+  await boxes.nth(1).fill('Support');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Split & download")')]);
+  const files = Object.keys(unzipSync(new Uint8Array(await readDownload(dl))));
+  expect(files.sort()).toEqual(['Ops.xlsx', 'Support.xlsx']);
+});
+
+// A rule mid-typing must not wedge the tool: it reports and recovers.
+test('Split: an unfinished pattern is reported, not thrown', async ({ page }) => {
+  await page.goto('/#/tool/split');
+  await dropXlsx(page, '.dropzone', 'refs.xlsx', REFS);
+  await page.waitForSelector('.config-bar');
+  await page.check('input[name="split-mode"][value="derived"]');
+  await page.selectOption('.mode-host select >> nth=1', 'pattern');
+  await page.fill('.mode-host input[type="text"], .mode-host .field-input:not([type="number"])', '^(');
+  await expect(page.locator('.sheet-meta')).toContainText('Cannot split');
+  await page.fill('.mode-host input[type="text"], .mode-host .field-input:not([type="number"])', '^([A-Z]+)');
+  await expect(page.locator('.sheet-meta')).toContainText('1 file');
 });
 
 test('Compare: classifies add/remove/change/unchanged', async ({ page }) => {
