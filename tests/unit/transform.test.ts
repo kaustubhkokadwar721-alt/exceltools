@@ -3,6 +3,10 @@ import {
   mergeStack,
   splitByColumn,
   splitByRows,
+  splitBySheet,
+  splitByDerived,
+  splitByGroups,
+  distinctValues,
   diffSheets,
   dedupeByKeys,
   cleanSheet,
@@ -71,6 +75,82 @@ describe('splitByRows', () => {
   it('treats sizes below 1 as 1', () => {
     const s = sheet(['N'], [[1], [2]]);
     expect(splitByRows(s, 0)).toHaveLength(2);
+  });
+});
+
+describe('splitBySheet', () => {
+  it('makes one part per sheet, keyed on the tab name', () => {
+    const parts = splitBySheet([sheet(['N'], [[1]], 'Jan'), sheet(['N'], [[2], [3]], 'Feb')]);
+    expect(parts.map((p) => p.key)).toEqual(['Jan', 'Feb']);
+    expect(parts[1].sheet.rows).toEqual([[2], [3]]);
+  });
+});
+
+describe('splitByDerived', () => {
+  const s = sheet(
+    ['Ref', 'Amt'],
+    [['INV-MH-0012', 1], ['INV-MH-0087', 2], ['INV-GJ-0041', 3], ['NOSEP', 4], [null, 5]],
+  );
+
+  it('keys on a piece of the value after a separator', () => {
+    const parts = splitByDerived(s, 0, { kind: 'separator', sep: '-', piece: 2 });
+    expect(parts.map((p) => p.key)).toEqual(['MH', 'GJ', '(unmatched)', '(blank)']);
+    expect(parts[0].sheet.rows).toHaveLength(2);
+  });
+
+  it('keys on a fixed-length prefix', () => {
+    const parts = splitByDerived(s, 0, { kind: 'prefix', length: 3 });
+    expect(parts.map((p) => p.key)).toEqual(['INV', 'NOS', '(blank)']);
+  });
+
+  it('keys on a pattern capture group, else the whole match', () => {
+    expect(splitByDerived(s, 0, { kind: 'pattern', source: '^([A-Z]+)' }).map((p) => p.key)).toEqual([
+      'INV',
+      'NOSEP',
+      '(blank)',
+    ]);
+    expect(splitByDerived(s, 0, { kind: 'pattern', source: '-[A-Z]{2}-' }).map((p) => p.key)).toEqual([
+      '-MH-',
+      '-GJ-',
+      '(unmatched)',
+      '(blank)',
+    ]);
+  });
+
+  it('throws on an invalid pattern rather than keying every row wrong', () => {
+    expect(() => splitByDerived(s, 0, { kind: 'pattern', source: '^(' })).toThrow();
+  });
+
+  it('sanitises characters Excel rejects in a sheet name', () => {
+    const withSlash = sheet(['K'], [['A/B']]);
+    expect(splitByColumn(withSlash, 0)[0].sheet.name).toBe('A_B');
+  });
+});
+
+describe('splitByGroups', () => {
+  const s = sheet(['State', 'Amt'], [['MH', 1], ['GJ', 2], ['KA', 3], ['WB', 4]]);
+  const assign = new Map([['MH', 'West'], ['GJ', 'West'], ['KA', 'South']]);
+
+  it('collapses assigned values into shared files', () => {
+    const parts = splitByGroups(s, 0, assign, 'own');
+    expect(parts.map((p) => p.key)).toEqual(['West', 'South', 'WB']);
+    expect(parts[0].sheet.rows).toEqual([['MH', 1], ['GJ', 2]]);
+  });
+
+  it('collects unassigned values into (other) when asked', () => {
+    const parts = splitByGroups(s, 0, assign, 'other');
+    expect(parts.map((p) => p.key)).toEqual(['West', 'South', '(other)']);
+  });
+});
+
+describe('distinctValues', () => {
+  it('counts values, commonest first, labelling blanks', () => {
+    const s = sheet(['D'], [['Fin'], ['Ops'], ['Fin'], [null]]);
+    expect(distinctValues(s, 0)).toEqual([
+      { value: 'Fin', count: 2 },
+      { value: '(blank)', count: 1 },
+      { value: 'Ops', count: 1 },
+    ]);
   });
 });
 

@@ -38,7 +38,7 @@ fails if any request leaves the origin ([`docs/SECURITY.md`](docs/SECURITY.md)).
 | **Convert** | A sheet **or a native Excel Table** → CSV / TSV / JSON / Markdown / HTML / XLSX |
 | **PDF tables** | Pull tables out of PDFs (bank statements, ERP prints, portal downloads) → merged into one sheet or one per table. Reads password-protected files; reports scanned pages instead of guessing at them |
 | **Merge** | Combine files — stack rows (aligned by column name) or keep each as a sheet |
-| **Split** | Split a sheet into many files by column value or row count → one `.zip` |
+| **Split** | Break a sheet into many files → one `.zip`. Five modes: column value, row count, one file per sheet, a key derived from *part* of a value (text after a character, fixed-length prefix, or regex), or a custom value → file grouping |
 | **Compare** | Diff two sheets on a key column: added / removed / changed / unchanged |
 | **Clean** | Trim, collapse spaces, fix case, numbers-from-text (Indian grouping, accounting negatives, ERP trailing minus, currency marks — unreadable figures are counted and shown), drop blank rows/cols |
 | **Dedupe** | Remove duplicate rows by chosen key columns, keeping first or last |
@@ -155,11 +155,12 @@ JupyterLab UI assumes a user who knows what a kernel is. Full reasoning in
 
 ## Architecture
 
-Two-tier engine strategy — match the engine to the tool:
+Match the engine to the tool — nothing heavy is paid for until it is used:
 
 | Tier | Tools | Engine | Loaded |
 |------|-------|--------|--------|
 | **Light** | convert, merge, split, clean, dedupe, compare | SheetJS (`xlsx`) | up front (small) |
+| **PDF** | pdf tables | pdf.js (`pdfjs-dist`), worker bundled same-origin | lazily on first use, then cached offline |
 | **SQL engine** | query, pivot | DuckDB-WASM | lazily on first use, then cached offline |
 | **Python engine** | python notebook | Pyodide (Python 3.14 + pandas + matplotlib) | lazily on first use, then cached offline |
 

@@ -11,6 +11,13 @@ export function xlsxBase64(aoa: Row[], sheetName = 'Sheet1'): string {
   return XLSX.write(wb, { bookType: 'xlsx', type: 'base64' }) as string;
 }
 
+/** Build a multi-tab .xlsx from named sheets, base64-encoded. */
+export function xlsxSheets(sheets: { name: string; aoa: Row[] }[]): string {
+  const wb = XLSX.utils.book_new();
+  for (const s of sheets) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s.aoa), s.name);
+  return XLSX.write(wb, { bookType: 'xlsx', type: 'base64' }) as string;
+}
+
 /**
  * Build an .xlsx that contains a real Excel Table (ListObject) over `aoa`.
  * SheetJS cannot write tables, so we inject the table part + rels into the zip.

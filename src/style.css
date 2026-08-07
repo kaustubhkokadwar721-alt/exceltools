@@ -223,6 +223,13 @@ html, body { overflow: hidden; }
 .mode-host { display: flex; gap: 14px; align-items: flex-end; }
 .checkbox-list { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; border: 1px solid var(--rgy-input); border-radius: 7px; padding: 8px 10px; background: var(--rgy-panel); min-width: 200px; }
 .keys-host { min-width: 220px; }
+/* Custom-grouping rows: the value takes the slack and ellipsises, its row count
+   and the file-name box keep their width, so a long value cannot wrap the box
+   onto a second line. */
+.group-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 150px; gap: 10px; align-items: center; }
+.group-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: var(--rgy-ink-soft); }
+.group-count { font: 500 12.5px var(--rgy-font-mono); color: var(--rgy-ink-faint); }
+.group-row .field-input { min-width: 0; min-height: 30px; padding: 4px 9px; font-size: 13.5px; }
 .clean-toggles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px 22px; }
 .clean-toggle { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "box label" "box hint"; column-gap: 8px; align-items: center; cursor: pointer; }
 .clean-toggle input { grid-area: box; }

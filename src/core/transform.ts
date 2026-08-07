@@ -51,20 +51,121 @@ export interface SplitPart {
   sheet: SheetData;
 }
 
-/** Split a sheet into groups, one per distinct value in `colIndex`. */
-export function splitByColumn(sheet: SheetData, colIndex: number): SplitPart[] {
+// Catch-all keys. Every row lands in some group — a value the rule cannot key
+// is visible in the output under one of these, never quietly dropped.
+export const BLANK_KEY = '(blank)';
+export const UNMATCHED_KEY = '(unmatched)';
+export const OTHER_KEY = '(other)';
+
+/** How a group key is derived from a cell's text. */
+export type KeyRule =
+  | { kind: 'whole' }
+  | { kind: 'separator'; sep: string; piece: number } // piece is 1-based
+  | { kind: 'prefix'; length: number }
+  | { kind: 'pattern'; source: string }; // first capture group, else whole match
+
+/** Excel rejects these characters in a sheet name and caps it at 31 chars. */
+function toSheetName(key: string): string {
+  return key.replace(/[\\/:?*[\]]/g, '_').slice(0, 31) || 'Sheet';
+}
+
+function cellText(v: CellValue): string {
+  return v === null || v === undefined || v === '' ? '' : String(v);
+}
+
+/** Bucket rows by a caller-supplied key, preserving first-seen group order. */
+function groupRows(sheet: SheetData, keyOf: (row: CellValue[]) => string): SplitPart[] {
   const groups = new Map<string, CellValue[][]>();
   for (const r of sheet.rows) {
-    const raw = r[colIndex];
-    const key = raw === null || raw === undefined || raw === '' ? '(blank)' : String(raw);
+    const key = keyOf(r);
     let bucket = groups.get(key);
     if (!bucket) groups.set(key, (bucket = []));
     bucket.push(r);
   }
   return [...groups.entries()].map(([key, rows]) => ({
     key,
-    sheet: { name: key.slice(0, 31) || 'Sheet', headers: sheet.headers, rows, totalRows: rows.length },
+    sheet: { name: toSheetName(key), headers: sheet.headers, rows, totalRows: rows.length },
   }));
+}
+
+/** Split a sheet into groups, one per distinct value in `colIndex`. */
+export function splitByColumn(sheet: SheetData, colIndex: number): SplitPart[] {
+  return groupRows(sheet, (r) => cellText(r[colIndex]) || BLANK_KEY);
+}
+
+/**
+ * Compile a rule into a key function. A bad pattern throws here — once, at
+ * build time — rather than on every row. Returns null when the rule cannot key
+ * the value, which the callers turn into the (unmatched) bucket.
+ */
+export function keyDeriver(rule: KeyRule): (value: string) => string | null {
+  switch (rule.kind) {
+    case 'whole':
+      return (v) => v;
+    case 'separator': {
+      const piece = Math.max(1, Math.floor(rule.piece));
+      return (v) => {
+        if (!rule.sep) return v;
+        const parts = v.split(rule.sep);
+        return parts.length >= piece ? parts[piece - 1].trim() : null;
+      };
+    }
+    case 'prefix': {
+      const n = Math.max(1, Math.floor(rule.length));
+      return (v) => v.slice(0, n).trim() || null;
+    }
+    case 'pattern': {
+      const re = new RegExp(rule.source);
+      return (v) => {
+        const m = re.exec(v);
+        return m ? m[1] ?? m[0] : null;
+      };
+    }
+  }
+}
+
+/** Split on a key derived from part of a column's value, not the whole cell. */
+export function splitByDerived(sheet: SheetData, colIndex: number, rule: KeyRule): SplitPart[] {
+  const derive = keyDeriver(rule);
+  return groupRows(sheet, (r) => {
+    const text = cellText(r[colIndex]);
+    if (!text) return BLANK_KEY;
+    return derive(text) || UNMATCHED_KEY;
+  });
+}
+
+/**
+ * Split on a caller-supplied value → file-name assignment, so many distinct
+ * values can collapse into a few files. Values with no assignment either keep
+ * their own file or collect under (other).
+ */
+export function splitByGroups(
+  sheet: SheetData,
+  colIndex: number,
+  assign: Map<string, string>,
+  unassigned: 'own' | 'other',
+): SplitPart[] {
+  return groupRows(sheet, (r) => {
+    const text = cellText(r[colIndex]) || BLANK_KEY;
+    return assign.get(text) ?? (unassigned === 'own' ? text : OTHER_KEY);
+  });
+}
+
+/** One part per sheet — the inverse of Merge's "separate sheets" mode. */
+export function splitBySheet(sheets: SheetData[]): SplitPart[] {
+  return sheets.map((s) => ({ key: s.name, sheet: s }));
+}
+
+/** Distinct values of a column with their row counts, commonest first. */
+export function distinctValues(sheet: SheetData, colIndex: number): { value: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const r of sheet.rows) {
+    const v = cellText(r[colIndex]) || BLANK_KEY;
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 }
 
 /** Split a sheet into fixed-size chunks of `size` data rows each. */
