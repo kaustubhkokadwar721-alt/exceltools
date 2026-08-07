@@ -36,6 +36,22 @@ export const TOOLS: ToolDef[] = [
     mount: async (root) => (await import('../tools/converter')).mountConverter(root),
   },
   {
+    id: 'pdf',
+    title: 'PDF tables',
+    blurb: 'Pull tables out of PDFs — merged into one sheet or kept separate.',
+    icon: '📄',
+    tier: 'light',
+    status: 'ready',
+    help: [
+      'Add one or more PDFs. Password-protected files (most bank statements) prompt for the password, which is used to open the file and never stored.',
+      'Every table found is listed with its page, column count and row count. Untick anything that is not wanted — a page header or a totals block often reads as a table.',
+      'Choose Merge to stack every table into one sheet aligned by column name, or Separate to get one sheet (or CSV) per table. Then Extract & download.',
+    ],
+    helpNote:
+      'A PDF stores positioned text, not tables, so columns are reconstructed from the gaps between them — check the preview against the document before relying on it. Scanned pages have no text to read and are reported and skipped rather than guessed at.',
+    mount: async (root) => (await import('../tools/pdf')).mountPdf(root),
+  },
+  {
     id: 'merge',
     title: 'Merge',
     blurb: 'Combine multiple files — stack rows or keep separate sheets.',

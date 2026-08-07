@@ -3,6 +3,11 @@
 
 export const SUPPORTED_EXTENSIONS = ['xlsx', 'xls', 'xlsm', 'xltx', 'csv', 'tsv', 'ods'] as const;
 
+// PDF is accepted only by the PDF tables tool, which has an engine that can read
+// it. Every other tool rejects it, because a PDF dropped on Merge or Pivot is a
+// mistake worth naming rather than a file to attempt.
+export const PDF_EXTENSIONS = ['pdf'] as const;
+
 // Soft ceiling: above this the light (SheetJS) path gets slow/memory-heavy.
 // Tier-2 (DuckDB) will raise this later. We warn rather than hard-block.
 // Limits set from measured behaviour (see docs/PERFORMANCE.md): SheetJS parse is
@@ -23,14 +28,15 @@ export function extensionOf(fileName: string): string {
   return dot === -1 ? '' : fileName.slice(dot + 1).toLowerCase();
 }
 
-export function validateFile(file: File): ValidationResult {
+/** @param allowed extensions this particular tool can actually read. */
+export function validateFile(file: File, allowed: readonly string[] = SUPPORTED_EXTENSIONS): ValidationResult {
   const ext = extensionOf(file.name);
 
   if (!ext) {
-    return { ok: false, error: `"${file.name}" has no file extension. Expected one of: ${SUPPORTED_EXTENSIONS.join(', ')}.` };
+    return { ok: false, error: `"${file.name}" has no file extension. Expected one of: ${allowed.join(', ')}.` };
   }
-  if (!(SUPPORTED_EXTENSIONS as readonly string[]).includes(ext)) {
-    return { ok: false, error: `Unsupported file type ".${ext}". Supported: ${SUPPORTED_EXTENSIONS.join(', ')}.` };
+  if (!allowed.includes(ext)) {
+    return { ok: false, error: `Unsupported file type ".${ext}". Supported: ${allowed.join(', ')}.` };
   }
   if (file.size === 0) {
     return { ok: false, error: `"${file.name}" is empty (0 bytes).` };
