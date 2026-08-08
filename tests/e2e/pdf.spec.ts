@@ -150,3 +150,62 @@ test('a PDF is refused by the tools that cannot read one', async ({ page }) => {
   await dropFile(page, '.dropzone', 'statement.pdf', STATEMENT);
   await expect(page.locator('.toast')).toContainText('Unsupported file type ".pdf"');
 });
+
+// ---- Browser floor ---------------------------------------------------------
+//
+// This suite is aimed at locked-down work PCs, where the browser is whatever the
+// fleet is pinned to — often years behind. pdfjs-dist 6.x reached for
+// Promise.try (Chrome 134+) and Math.sumPrecise (Chrome 137+), which meant it
+// read nothing at all below that, and said nothing either: those calls sit
+// inside pdf.js's worker plumbing, where the TypeError escapes as an unhandled
+// rejection instead of rejecting the promise the tool is awaiting.
+//
+// Deleting builtins is a blunter instrument than running an old browser, but it
+// tests the thing that actually broke, on whatever browser CI happens to pin —
+// which is the point, since the last break was invisible precisely because the
+// local browser was newer than CI's.
+
+/** Make a current browser behave like one that predates the given builtins. */
+async function withoutBuiltins(page: import('@playwright/test').Page, paths: string[]): Promise<void> {
+  await page.addInitScript((list: string[]) => {
+    for (const path of list) {
+      const [holder, prop] = path.split('.');
+      delete (globalThis as unknown as Record<string, Record<string, unknown>>)[holder][prop];
+    }
+  }, paths);
+}
+
+test('a PDF still reads on a browser at the supported floor', async ({ page }) => {
+  await withoutBuiltins(page, ['Promise.try', 'Math.sumPrecise']);
+  await open(page);
+  await dropFile(page, '.dropzone', 'statement.pdf', STATEMENT);
+
+  // The same expectations as the first test in this file: nothing about the
+  // result may depend on a browser newer than the floor.
+  await expect(page.locator('#found .file-list-head')).toContainText('2 table(s) found in 1 PDF(s)');
+  await expect(page.locator('#preview .sheet-meta')).toContainText('4 rows');
+  const rows = await gridRows(page, '#preview', 5);
+  expect(rows[0]).toEqual(['1', 'statement p1', '01/04/2025', 'Opening Balance', '1000']);
+  expect(rows[2][1]).toBe('statement p2');
+
+  expect((page as unknown as { _errors: string[] })._errors).toEqual([]);
+});
+
+test('a browser below the floor is told so, not left waiting', async ({ page }) => {
+  // Promise.withResolvers is the oldest thing the pinned pdf.js needs and does
+  // not polyfill, so removing it stands in for anything below the floor.
+  await withoutBuiltins(page, ['Promise.withResolvers']);
+  await open(page);
+  await dropFile(page, '.dropzone', 'statement.pdf', STATEMENT);
+
+  // Named as a limit of the browser, and specific about what would work —
+  // not a stack trace, and not phrased as though the file were at fault.
+  const notice = page.locator('#found .tool-notice');
+  await expect(notice).toContainText('too old to read PDFs');
+  await expect(notice).toContainText('Chrome or Edge 119+');
+
+  // The old failure left the progress line up and the tool permanently busy.
+  await expect(page.locator('#content #status')).toHaveText('');
+  // Reported through the tool rather than thrown past it.
+  expect((page as unknown as { _errors: string[] })._errors).toEqual([]);
+});

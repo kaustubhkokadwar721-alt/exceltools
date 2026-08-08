@@ -6,8 +6,8 @@ user's machine. Deployable as static files, an offline zip, or an installable
 PWA. Built for accountants and finance teams, not engineers.
 
 > **Status:** Phases 0–4 complete; Phase 5 hardening mostly done (tests, CI,
-> security, performance, fidelity — only the real-PC pilot remains). Nine tools
-> live, plus native Excel Table import. 178 unit + 51 E2E tests in CI.
+> security, performance, fidelity — only the real-PC pilot remains). Ten tools
+> live, plus native Excel Table import. 204 unit + 63 E2E tests in CI.
 > See [`docs/`](docs/).
 
 ## Live app
@@ -185,12 +185,13 @@ Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
 
 ## Quality
 
-- **178 unit tests** (Vitest) over the pure modules — transform, validation, zip,
-  tables, source, plus the notebook's `.ipynb` round-trip (results included),
-  error translation, draft storage and syntax highlighting — and **51 E2E tests**
-  (Playwright): one per tool, Excel-Table import, staged rename + schema, a
-  **no-external-requests privacy guard**, and the notebook's save/reopen,
-  recovery and plain-English errors.
+- **204 unit tests** (Vitest) over the pure modules — transform, validation, zip,
+  tables, source, PDF table geometry, plus the notebook's `.ipynb` round-trip
+  (results included), error translation, draft storage and syntax highlighting —
+  and **63 E2E tests** (Playwright): one per tool, Excel-Table import, staged
+  rename + schema, a **no-external-requests privacy guard**, the browser-floor
+  cases described below, and the notebook's save/reopen, recovery and
+  plain-English errors.
 - CI (`.github/workflows/test.yml`) runs typecheck + unit + E2E on every PR and
   push to `main`; deploys only happen from `main`.
 - Measured performance limits (soft warn 25 MB, hard cap 100 MB) —
@@ -206,6 +207,28 @@ Full rationale: [`docs/TECH_DECISIONS.md`](docs/TECH_DECISIONS.md).
   disclosed open issue (the `xlsx` advisories, with the one command that closes
   them).
 
+### Browser floor
+
+A locked-down work PC runs whatever browser the fleet is pinned to, which is
+often years old, so the supported floor is stated rather than assumed:
+
+| | Minimum |
+|---|---|
+| Chrome / Edge | 119 (Oct 2023) |
+| Firefox | 121 |
+| Safari | 17.4 |
+
+The binding constraint is the PDF tool: `pdfjs-dist` is held at 4.x because 6.x
+calls `Promise.try` (Chrome 134+) and `Math.sumPrecise` (Chrome 137+), which
+would have cut off any fleet below Chrome 137. Below the floor the PDF tool says
+so in a sentence and the other nine tools carry on working.
+
+Two E2E cases pin this from both ends — one reads a PDF with the post-floor
+builtins deleted, the other checks that a browser missing a required builtin gets
+the message instead of a spinner that never stops. They run on whatever Chromium
+CI pins, so a dependency bump that raises the floor fails the build rather than
+reaching a work PC.
+
 ## Develop
 
 ```bash
@@ -213,8 +236,8 @@ npm install
 npm run dev        # dev server
 npm run build      # → dist/ (static, self-contained)
 npm run preview    # serve dist/ locally; test PWA + offline in DevTools
-npm run test       # 111 unit tests (Vitest)
-npm run test:e2e   # 41 E2E tests (Playwright, against the production build)
+npm run test       # 204 unit tests (Vitest)
+npm run test:e2e   # 63 E2E tests (Playwright, against the production build)
 npm run package    # → exceltools-offline.zip (offline distributable)
 npm run typecheck
 ```
@@ -238,7 +261,7 @@ Warm "register" theme. The shell is **exactly one viewport tall and never
 scrolls**: a slim app bar (brand, tool switcher, file context, status, privacy
 badge, help), a **Your data** panel on the left, and one working surface — each
 scrolling inside itself. Density follows viewport *height*, so a short laptop
-panel tightens up without anyone configuring it. The nine tools live behind the
+panel tightens up without anyone configuring it. The ten tools live behind the
 switcher, which lists them all with descriptions; a Playwright test asserts that
 no tool pushes its first control below the fold at 1366×768. Typography pairs
 **Newsreader** (serif display), **Instrument Sans** (interface) and **Spline

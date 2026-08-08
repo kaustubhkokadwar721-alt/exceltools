@@ -19,6 +19,42 @@ export class PdfPasswordRequired extends Error {
   }
 }
 
+/** Raised when the browser is too old to run the bundled pdf.js at all. */
+export class PdfUnsupportedBrowser extends Error {
+  constructor(public readonly missing: string[]) {
+    super(
+      'This browser is too old to read PDFs. Chrome or Edge 119+, Firefox 121+, ' +
+        'or Safari 17.4+ can; every other tool in the suite works as it is.',
+    );
+    this.name = 'PdfUnsupportedBrowser';
+  }
+}
+
+/**
+ * Builtins the pinned pdf.js build calls but does not polyfill itself.
+ *
+ * This is checked up front because of *how* pdf.js fails without them: the call
+ * sites are inside its worker plumbing, where the TypeError escapes as an
+ * unhandled rejection instead of rejecting the promise `readPdf` awaits. The
+ * read then never settles — no error, no result, and the caller is left waiting
+ * forever on a file that can never load. A cheap check here turns that into a
+ * sentence the person reading it can act on.
+ *
+ * Tied to the `pdfjs-dist` pin in package.json: a major bump can add to what
+ * pdf.js assumes, which is exactly how this list goes stale. The floor is
+ * pinned from the other side too — see the browser-floor cases in
+ * tests/e2e/pdf.spec.ts, which fail if a bump reintroduces a newer-only API.
+ *
+ * Probed untyped on purpose: `lib` is ES2022, so naming `Promise.withResolvers`
+ * as a typed property would not compile — and raising `lib` to reach it would
+ * hand the rest of the codebase the same newer-than-the-floor APIs that caused
+ * this. The cast stays local to the probe.
+ */
+const REQUIRED: [name: string, present: () => boolean][] = [
+  ['Promise.withResolvers', () => typeof (Promise as { withResolvers?: unknown }).withResolvers === 'function'],
+  ['structuredClone', () => typeof structuredClone === 'function'],
+];
+
 type PdfJs = typeof import('pdfjs-dist');
 let lib: PdfJs | null = null;
 
@@ -28,6 +64,14 @@ let lib: PdfJs | null = null;
  *  the intended behaviour. */
 async function getLib(): Promise<PdfJs> {
   if (lib) return lib;
+  const missing = REQUIRED.filter(([, present]) => !present()).map(([name]) => name);
+  if (missing.length) {
+    // The sentence shown on screen names browser versions, not JS builtins. The
+    // builtins go here instead, so an administrator asked "why not on this PC?"
+    // has the specific answer without it being in an accountant's way.
+    console.warn(`PDF reading unavailable — this browser lacks: ${missing.join(', ')}`);
+    throw new PdfUnsupportedBrowser(missing);
+  }
   const mod = await import('pdfjs-dist');
   mod.GlobalWorkerOptions.workerPort = new Worker(
     new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url),

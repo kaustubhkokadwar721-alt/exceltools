@@ -255,6 +255,10 @@ html, body { overflow: hidden; }
 .sheet-tab:focus-visible { outline: 2px solid var(--rgy-green); outline-offset: 2px; }
 .sheet-meta { color: var(--rgy-ink-faint); font-size: 14px; margin-bottom: 8px; }
 
+/* A standing limitation of this machine rather than a transient error, so it
+   stays on the page instead of being toasted away. */
+.tool-notice { margin: 10px 0; padding: 12px 14px; border: 1px solid var(--rgy-rule); border-left: 4px solid var(--rgy-red); border-radius: var(--rgy-radius-sm); background: color-mix(in srgb, var(--rgy-red) 5%, var(--rgy-panel)); color: var(--rgy-ink); font-size: 14.5px; }
+
 /* ---- Dropzone ---- */
 /* One row: action left, the privacy promise right and legible. */
 .dropzone { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; border: 1.5px dashed var(--rgy-input); border-radius: var(--rgy-radius); background: var(--rgy-panel); padding: 14px 20px; cursor: pointer; transition: border-color .14s var(--rgy-ease), background .14s var(--rgy-ease); }

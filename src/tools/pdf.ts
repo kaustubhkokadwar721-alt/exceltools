@@ -19,7 +19,7 @@ import { makeZip, blobToBytes, type ZipEntry } from '../core/zip';
 import { uniqueSheetName } from '../core/serialize';
 import { mergeStack, type NamedSheet } from '../core/transform';
 import { PDF_EXTENSIONS } from '../core/validation';
-import { readPdf, PdfPasswordRequired } from '../core/pdfextract';
+import { readPdf, PdfPasswordRequired, PdfUnsupportedBrowser } from '../core/pdfextract';
 import { extractTables, scannedPages, tableLabel, toSheet, type PdfPage, type PdfTable } from '../core/pdftable';
 import type { ExportFormat, SheetData } from '../core/types';
 
@@ -55,6 +55,9 @@ let addSource = true;
 let joinWrapped = true;
 let convertNumbers = true;
 let busy = false;
+/** Set when the browser cannot run pdf.js at all. Kept on screen rather than
+ *  toasted away, because it is a standing fact about this machine. */
+let unsupported: string | null = null;
 
 export function mountPdf(root: HTMLElement): void {
   loaded = [];
@@ -63,6 +66,7 @@ export function mountPdf(root: HTMLElement): void {
   joinWrapped = true;
   convertNumbers = true;
   busy = false;
+  unsupported = null;
   root.innerHTML = `
     <div class="tool-body">
       <div id="dz"></div>
@@ -91,20 +95,30 @@ async function addFiles(root: HTMLElement, files: File[]): Promise<void> {
   busy = true;
   const status = root.querySelector<HTMLElement>('#status')!;
 
-  for (const file of files) {
-    try {
-      const pages = await readWithPassword(file, (done, total) => {
-        status.textContent = `Reading ${file.name} — page ${done} of ${total}…`;
-      });
-      if (!pages) continue; // cancelled at the password prompt
-      loaded.push({ name: file.name, pages, scanned: scannedPages(pages), dropped: new Set() });
-    } catch (e) {
-      toast(`Could not read "${file.name}": ${msg(e)}`, 'error', 8000);
+  try {
+    for (const file of files) {
+      try {
+        const pages = await readWithPassword(file, (done, total) => {
+          status.textContent = `Reading ${file.name} — page ${done} of ${total}…`;
+        });
+        if (!pages) continue; // cancelled at the password prompt
+        loaded.push({ name: file.name, pages, scanned: scannedPages(pages), dropped: new Set() });
+      } catch (e) {
+        // Too old a browser is not this file's fault, and the next file would
+        // fail identically. Say it once, keep it on screen, and stop reading.
+        if (e instanceof PdfUnsupportedBrowser) {
+          unsupported = e.message;
+          break;
+        }
+        toast(`Could not read "${file.name}": ${msg(e)}`, 'error', 8000);
+      }
     }
+  } finally {
+    // A throw must not leave the tool wedged with `busy` set and the progress
+    // line still on screen — every later drop would be ignored in silence.
+    status.textContent = '';
+    busy = false;
   }
-
-  status.textContent = '';
-  busy = false;
   render(root);
 }
 
@@ -167,6 +181,7 @@ function render(root: HTMLElement): void {
 function renderFound(root: HTMLElement): void {
   const host = root.querySelector<HTMLElement>('#found')!;
   host.innerHTML = '';
+  if (unsupported) host.append(el('div', { class: 'tool-notice' }, [unsupported]));
   if (!loaded.length) return;
 
   const found = allFound();
